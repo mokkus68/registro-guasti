@@ -4,22 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Registro Guasti su Google Sheets</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#059669">
-  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 md:p-8 font-sans">
-<!-- Schermata di Login con PIN -->
-<div id="auth-overlay" class="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
-  <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full space-y-4 text-center">
-    <h2 class="text-xl font-bold text-gray-800">🔒 Accesso Riservato</h2>
-    <p class="text-xs text-gray-500">Inserisci il PIN segreto per accedere al registro.</p>
-    <input type="password" id="pinInput" placeholder="Inserisci PIN..." class="w-full p-2 border rounded-md text-center text-lg tracking-widest">
-    <button onclick="verificaPin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-md">
-      Accedi
-    </button>
+
+  <!-- Schermata di Login con PIN -->
+  <div id="auth-overlay" class="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
+    <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full space-y-4 text-center">
+      <h2 class="text-xl font-bold text-gray-800">🔒 Accesso Riservato</h2>
+      <p class="text-xs text-gray-500">Inserisci il PIN segreto per accedere al registro.</p>
+      <input type="password" id="pinInput" placeholder="Inserisci PIN..." class="w-full p-2 border rounded-md text-center text-lg tracking-widest">
+      <button onclick="verificaPin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-md">
+        Accedi
+      </button>
+    </div>
   </div>
-</div>
 
   <div class="max-w-4xl mx-auto space-y-6">
 
@@ -152,26 +153,39 @@
   </div>
 
   <script>
-// Scegli il tuo PIN segreto
-  const MIO_PIN = "7880"; // Cambialo con il tuo PIN
+    // --- GESTIONE PIN DI SICUREZZA ---
+    const MIO_PIN = "7880"; // ⚠️ Cambia qui il tuo PIN segreto se desideri
 
-  function verificaPin() {
-    const inserito = document.getElementById('pinInput').value;
-    if (inserito === MIO_PIN) {
-      document.getElementById('auth-overlay').style.display = 'none';
-      sessionStorage.setItem('auth_ok', 'true'); // Ricorda l'accesso per la sessione
-    } else {
-      alert("PIN errato!");
-      document.getElementById('pinInput').value = "";
+    function verificaPin() {
+      const inserito = document.getElementById('pinInput').value;
+      if (inserito === MIO_PIN) {
+        document.getElementById('auth-overlay').style.display = 'none';
+        sessionStorage.setItem('auth_ok', 'true');
+        caricaGuasti(); // Carica i guasti subito dopo aver inserito il PIN corretto
+      } else {
+        alert("PIN errato!");
+        document.getElementById('pinInput').value = "";
+      }
     }
-  }
 
-  // Controlla se ha già fatto l'accesso in questa sessione
-  window.addEventListener('DOMContentLoaded', () => {
-    if (sessionStorage.getItem('auth_ok') === 'true') {
-      document.getElementById('auth-overlay').style.display = 'none';
-    }
-  });
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedUrl = localStorage.getItem('gs_script_url');
+      if (savedUrl) {
+        document.getElementById('script-url').value = savedUrl;
+      }
+
+      // Se la sessione è già autenticata, nascondi il blocco PIN e carica i dati
+      if (sessionStorage.getItem('auth_ok') === 'true') {
+        document.getElementById('auth-overlay').style.display = 'none';
+        caricaGuasti();
+      } else {
+        if (!savedUrl) {
+          document.getElementById('config-panel').classList.remove('hidden');
+        }
+      }
+    });
+    // ---------------------------------
+
     let fotoBase64 = [];
     let guastiCache = [];
     
@@ -183,16 +197,6 @@
 
     document.getElementById('data').value = oggiStringa;
     document.getElementById('filtroData').value = oggiStringa;
-
-    window.addEventListener('DOMContentLoaded', () => {
-      const savedUrl = localStorage.getItem('gs_script_url');
-      if (savedUrl) {
-        document.getElementById('script-url').value = savedUrl;
-        caricaGuasti();
-      } else {
-        document.getElementById('config-panel').classList.remove('hidden');
-      }
-    });
 
     function toggleConfig() {
       document.getElementById('config-panel').classList.toggle('hidden');
@@ -391,8 +395,6 @@
       const tipo = document.getElementById('filtroTipo').value;
 
       const titoloLista = document.getElementById('lista-titolo');
-
-      // Se l'utente sta scrivendo nella ricerca, indichiamo che sta cercando su tutto lo storico
       if (query.length > 0) {
         titoloLista.innerText = "Risultati ricerca globale";
       } else if (dataSelezionata === oggiStringa) {
@@ -402,7 +404,6 @@
       }
 
       const filtrati = guastiCache.filter(g => {
-        // Se c'è una ricerca attiva, IGNORIAMO il filtro della data e cerchiamo su tutto lo storico
         const matchData = query.length > 0 ? true : (!dataSelezionata || g.data === dataSelezionata);
 
         const matchTesto = !query || 
