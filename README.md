@@ -1,2 +1,0 @@
-# registro-guasti
-Database guasti
