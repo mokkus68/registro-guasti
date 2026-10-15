@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registro Guasti su Google Sheets</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#059669">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 md:p-8 font-sans">
+<!-- Schermata di Login con PIN -->
+<div id="auth-overlay" class="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
+  <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full space-y-4 text-center">
+    <h2 class="text-xl font-bold text-gray-800">🔒 Accesso Riservato</h2>
+    <p class="text-xs text-gray-500">Inserisci il PIN segreto per accedere al registro.</p>
+    <input type="password" id="pinInput" placeholder="Inserisci PIN..." class="w-full p-2 border rounded-md text-center text-lg tracking-widest">
+    <button onclick="verificaPin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-md">
+      Accedi
+    </button>
+  </div>
+</div>
+
+  <div class="max-w-4xl mx-auto space-y-6">
+
+    <!-- Header -->
+    <div class="bg-white p-6 rounded-lg shadow-md flex justify-between items-center flex-wrap gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-800">🛠️ Registro Guasti & Foto</h1>
+        <p class="text-gray-500 text-sm">Sincronizzato direttamente con Google Sheets</p>
+      </div>
+      <button onclick="toggleConfig()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded text-sm flex items-center gap-1">
+        ⚙️ Imposta URL Google Script
+      </button>
+    </div>
+
+    <!-- Pannello Configurazione URL -->
+    <div id="config-panel" class="bg-blue-50 border border-blue-200 p-6 rounded-lg shadow-sm hidden">
+      <h2 class="text-lg font-semibold text-blue-900 mb-2">URL Google Apps Script</h2>
+      <p class="text-xs text-blue-700 mb-3">Incolla qui l'URL web ottenuto pubblicando lo script sul tuo Foglio Google.</p>
+      
+      <input type="text" id="script-url" placeholder="https://script.google.com/macros/s/.../exec" class="w-full p-2 border rounded text-sm mb-3">
+      <button onclick="saveScriptUrl()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded text-sm w-full">
+        Salva URL e Connetti
+      </button>
+    </div>
+
+    <!-- Modulo di Inserimento / Modifica -->
+    <div class="bg-white p-6 rounded-lg shadow-md">
+      <div class="flex justify-between items-center mb-4">
+        <h2 id="form-title" class="text-xl font-semibold text-gray-700">Nuovo Intervento</h2>
+        <button id="btn-annulla-modifica" onclick="annullaModifica()" class="hidden text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded">
+          Annulla Modifica
+        </button>
+      </div>
+
+      <form id="guastoForm" onsubmit="salvaGuasto(event)" class="space-y-4">
+        <input type="hidden" id="editRowIndex" value="">
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">1. Data Intervento</label>
+            <input type="date" id="data" required class="mt-1 w-full p-2 border rounded-md">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">2. Numero WR (Intero)</label>
+            <input type="number" id="wr" required min="1" step="1" placeholder="Es. 102938" class="mt-1 w-full p-2 border rounded-md">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">3. Centrale</label>
+            <input type="text" id="centrale" required placeholder="Es. Milano Centro" class="mt-1 w-full p-2 border rounded-md">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">4. RL / Arlo</label>
+            <input type="text" id="rlArlo" placeholder="Es. RL-01" class="mt-1 w-full p-2 border rounded-md">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">5. Box / PTE</label>
+            <input type="text" id="boxPte" placeholder="Es. BOX-12" class="mt-1 w-full p-2 border rounded-md">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">6. Tipo di Guasto</label>
+            <select id="tipoGuasto" required class="mt-1 w-full p-2 border rounded-md">
+              <option value="">Seleziona tipo...</option>
+              <option value="Rame">Rame</option>
+              <option value="Fibra">Fibra</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">7. Note Guasto</label>
+          <textarea id="noteGuasto" rows="2" placeholder="Descrizione del problema..." class="mt-1 w-full p-2 border rounded-md"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">8. Note Riparazione</label>
+          <textarea id="noteRiparazione" rows="2" placeholder="Descrizione della soluzione..." class="mt-1 w-full p-2 border rounded-md"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">9. Note Reali</label>
+          <textarea id="noteReali" rows="2" placeholder="Note reali aggiuntive..." class="mt-1 w-full p-2 border rounded-md"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Foto o Scheda Intervento (Opzionale)</label>
+          <input type="file" id="fotoInput" accept="image/*" multiple onchange="gestisciFoto(event)" class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700">
+          <div id="anteprimeFoto" class="flex flex-wrap gap-2 mt-3"></div>
+        </div>
+
+        <button type="submit" id="btnSalva" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-md transition duration-200">
+          Salva Intervento su Google Sheets
+        </button>
+      </form>
+    </div>
+
+    <!-- Filtri e Selezione Data -->
+    <div class="bg-white p-4 rounded-lg shadow-md space-y-4">
+      <div class="flex flex-wrap gap-4 items-center justify-between">
+        <div class="flex items-center gap-2 flex-1 min-w-[250px]">
+          <label class="text-sm font-medium text-gray-700 whitespace-nowrap">📅 Visualizza Data:</label>
+          <input type="date" id="filtroData" onchange="filtraGuasti()" class="p-2 border rounded-md flex-1">
+          <button onclick="impostaOggi()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs px-3 py-2 rounded font-medium">Oggi</button>
+        </div>
+        <select id="filtroTipo" onchange="filtraGuasti()" class="p-2 border rounded-md">
+          <option value="Tutti">Tutti i tipi</option>
+          <option value="Rame">Solo Rame</option>
+          <option value="Fibra">Solo Fibra</option>
+        </select>
+      </div>
+      <div>
+        <input type="text" id="ricerca" oninput="filtraGuasti()" placeholder="Cerca per WR, Centrale, RL/Arlo, Box/PTE o Note..." class="p-2 border rounded-md w-full">
+      </div>
+    </div>
+
+    <!-- Lista Guasti -->
+    <div class="bg-white p-6 rounded-lg shadow-md">
+      <div class="flex justify-between items-center mb-4">
+        <h2 id="lista-titolo" class="text-xl font-semibold text-gray-700">Interventi di Oggi</h2>
+      </div>
+      <div id="listaGuasti" class="space-y-4">
+        <p class="text-center text-gray-500">Nessun guasto registrato o in caricamento...</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+// Scegli il tuo PIN segreto
+  const MIO_PIN = "7880"; // Cambialo con il tuo PIN
+
+  function verificaPin() {
+    const inserito = document.getElementById('pinInput').value;
+    if (inserito === MIO_PIN) {
+      document.getElementById('auth-overlay').style.display = 'none';
+      sessionStorage.setItem('auth_ok', 'true'); // Ricorda l'accesso per la sessione
+    } else {
+      alert("PIN errato!");
+      document.getElementById('pinInput').value = "";
+    }
+  }
+
+  // Controlla se ha già fatto l'accesso in questa sessione
+  window.addEventListener('DOMContentLoaded', () => {
+    if (sessionStorage.getItem('auth_ok') === 'true') {
+      document.getElementById('auth-overlay').style.display = 'none';
+    }
+  });
+    let fotoBase64 = [];
+    let guastiCache = [];
+    
+    const oggiObj = new Date();
+    const annoOggi = oggiObj.getFullYear();
+    const meseOggi = String(oggiObj.getMonth() + 1).padStart(2, '0');
+    const giornoOggi = String(oggiObj.getDate()).padStart(2, '0');
+    const oggiStringa = `${annoOggi}-${meseOggi}-${giornoOggi}`;
+
+    document.getElementById('data').value = oggiStringa;
+    document.getElementById('filtroData').value = oggiStringa;
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedUrl = localStorage.getItem('gs_script_url');
+      if (savedUrl) {
+        document.getElementById('script-url').value = savedUrl;
+        caricaGuasti();
+      } else {
+        document.getElementById('config-panel').classList.remove('hidden');
+      }
+    });
+
+    function toggleConfig() {
+      document.getElementById('config-panel').classList.toggle('hidden');
+    }
+
+    function saveScriptUrl() {
+      const url = document.getElementById('script-url').value.trim();
+      if (!url) {
+        alert("Inserisci un URL valido");
+        return;
+      }
+      localStorage.setItem('gs_script_url', url);
+      alert('URL salvato con successo!');
+      toggleConfig();
+      caricaGuasti();
+    }
+
+    function gestisciFoto(e) {
+      const files = e.target.files;
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.src = event.target.result;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 600;
+            const MAX_HEIGHT = 600;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5);
+            fotoBase64.push(compressedBase64);
+            aggiornaAnteprimeFoto();
+          };
+        };
+        reader.readAsDataURL(file);
+      });
+      e.target.value = '';
+    }
+
+    function rimuoviFoto(index) {
+      fotoBase64.splice(index, 1);
+      aggiornaAnteprimeFoto();
+    }
+
+    function aggiornaAnteprimeFoto() {
+      const anteprime = document.getElementById('anteprimeFoto');
+      anteprime.innerHTML = '';
+      
+      fotoBase64.forEach((imgSrc, index) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = "relative inline-block";
+        
+        wrapper.innerHTML = `
+          <img src="${imgSrc}" class="w-16 h-16 object-cover rounded border shadow-sm">
+          <button type="button" onclick="rimuoviFoto(${index})" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-red-700 shadow">×</button>
+        `;
+        anteprime.appendChild(wrapper);
+      });
+    }
+
+    function impostaOggi() {
+      document.getElementById('filtroData').value = oggiStringa;
+      filtraGuasti();
+    }
+
+    async function salvaGuasto(e) {
+      e.preventDefault();
+      const url = localStorage.getItem('gs_script_url');
+      if (!url) {
+        alert("Configura prima l'URL di Google Script!");
+        toggleConfig();
+        return;
+      }
+
+      const btn = document.getElementById('btnSalva');
+      btn.disabled = true;
+      const editIndex = document.getElementById('editRowIndex').value;
+      const isEditing = editIndex !== "";
+
+      btn.innerText = isEditing ? "Aggiornamento in corso..." : "Invio in corso al Foglio Google...";
+
+      const payload = {
+        action: isEditing ? "update" : "insert",
+        rowIndex: editIndex,
+        data: document.getElementById('data').value,
+        wr: parseInt(document.getElementById('wr').value),
+        centrale: document.getElementById('centrale').value,
+        rlArlo: document.getElementById('rlArlo').value,
+        boxPte: document.getElementById('boxPte').value,
+        tipoGuasto: document.getElementById('tipoGuasto').value,
+        noteGuasto: document.getElementById('noteGuasto').value,
+        noteRiparazione: document.getElementById('noteRiparazione').value,
+        noteReali: document.getElementById('noteReali').value,
+        foto: fotoBase64
+      };
+
+      try {
+        await fetch(url, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload)
+        });
+
+        alert(isEditing ? "Intervento aggiornato con successo!" : "Intervento salvato con successo nel Foglio Google!");
+        
+        resetForm();
+        setTimeout(caricaGuasti, 2000);
+      } catch (err) {
+        alert("Errore di invio: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Salva Intervento su Google Sheets";
+      }
+    }
+
+    function preparaModifica(rowIndex) {
+      const guasto = guastiCache.find(g => g.rowIndex == rowIndex);
+      if (!guasto) return;
+
+      document.getElementById('editRowIndex').value = guasto.rowIndex;
+      document.getElementById('data').value = guasto.data || '';
+      document.getElementById('wr').value = guasto.wr || '';
+      document.getElementById('centrale').value = guasto.centrale || '';
+      document.getElementById('rlArlo').value = guasto.rlArlo || '';
+      document.getElementById('boxPte').value = guasto.boxPte || '';
+      document.getElementById('tipoGuasto').value = guasto.tipoGuasto || '';
+      document.getElementById('noteGuasto').value = guasto.noteGuasto || '';
+      document.getElementById('noteRiparazione').value = guasto.noteRiparazione || '';
+      document.getElementById('noteReali').value = guasto.noteReali || '';
+      
+      fotoBase64 = guasto.foto ? [...guasto.foto] : [];
+      aggiornaAnteprimeFoto();
+
+      document.getElementById('form-title').innerText = "Modifica Intervento (WR #" + guasto.wr + ")";
+      document.getElementById('btnSalva').innerText = "Aggiorna Intervento";
+      document.getElementById('btn-annulla-modifica').classList.remove('hidden');
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function annullaModifica() {
+      resetForm();
+    }
+
+    function resetForm() {
+      document.getElementById('guastoForm').reset();
+      document.getElementById('editRowIndex').value = '';
+      document.getElementById('data').value = oggiStringa;
+      document.getElementById('anteprimeFoto').innerHTML = '';
+      fotoBase64 = [];
+      document.getElementById('form-title').innerText = "Nuovo Intervento";
+      document.getElementById('btnSalva').innerText = "Salva Intervento su Google Sheets";
+      document.getElementById('btn-annulla-modifica').classList.add('hidden');
+    }
+
+    async function caricaGuasti() {
+      const url = localStorage.getItem('gs_script_url');
+      if (!url) return;
+
+      const container = document.getElementById('listaGuasti');
+      container.innerHTML = "<p class='text-center text-gray-500'>Sincronizzazione dati...</p>";
+
+      try {
+        const response = await fetch(url);
+        const data = await response.json();
+        guastiCache = data.reverse();
+        filtraGuasti();
+      } catch (err) {
+        container.innerHTML = "<p class='text-center text-gray-500'>Impossibile caricare la lista dal foglio (o foglio vuoto).</p>";
+      }
+    }
+
+    function filtraGuasti() {
+      const dataSelezionata = document.getElementById('filtroData').value;
+      const query = document.getElementById('ricerca').value.toLowerCase().trim();
+      const tipo = document.getElementById('filtroTipo').value;
+
+      const titoloLista = document.getElementById('lista-titolo');
+
+      // Se l'utente sta scrivendo nella ricerca, indichiamo che sta cercando su tutto lo storico
+      if (query.length > 0) {
+        titoloLista.innerText = "Risultati ricerca globale";
+      } else if (dataSelezionata === oggiStringa) {
+        titoloLista.innerText = "Interventi di Oggi";
+      } else {
+        titoloLista.innerText = "Interventi del " + dataSelezionata;
+      }
+
+      const filtrati = guastiCache.filter(g => {
+        // Se c'è una ricerca attiva, IGNORIAMO il filtro della data e cerchiamo su tutto lo storico
+        const matchData = query.length > 0 ? true : (!dataSelezionata || g.data === dataSelezionata);
+
+        const matchTesto = !query || 
+                           g.wr.toString().includes(query) ||
+                           g.centrale.toLowerCase().includes(query) ||
+                           (g.rlArlo && g.rlArlo.toString().toLowerCase().includes(query)) ||
+                           (g.boxPte && g.boxPte.toString().toLowerCase().includes(query)) ||
+                           (g.noteGuasto && g.noteGuasto.toLowerCase().includes(query)) ||
+                           (g.noteRiparazione && g.noteRiparazione.toLowerCase().includes(query)) ||
+                           (g.noteReali && g.noteReali.toLowerCase().includes(query));
+        
+        const matchTipo = tipo === 'Tutti' || g.tipoGuasto === tipo;
+
+        return matchData && matchTesto && matchTipo;
+      });
+
+      mostraGuasti(filtrati);
+    }
+
+    function mostraGuasti(lista) {
+      const container = document.getElementById('listaGuasti');
+      container.innerHTML = '';
+
+      if (!lista || lista.length === 0) {
+        container.innerHTML = "<p class='text-center text-gray-500 py-4'>Nessun guasto registrato per questa data o con questi filtri.</p>";
+        return;
+      }
+
+      lista.forEach(g => {
+        const badgeColor = g.tipoGuasto === 'Rame' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-blue-100 text-blue-800 border-blue-300';
+        
+        const card = document.createElement('div');
+        card.className = "border rounded-lg p-4 bg-gray-50 hover:bg-white transition flex flex-col gap-2";
+
+        card.innerHTML = `
+          <div class="flex justify-between items-start flex-wrap gap-2">
+            <div>
+              <span class="font-bold text-gray-800 text-lg">WR #${g.wr}</span>
+              <span class="text-sm text-gray-500 ml-2">📅 ${g.data}</span>
+              <span class="text-sm font-semibold text-gray-700 ml-2">🏢 ${g.centrale}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeColor}">${g.tipoGuasto}</span>
+              <button onclick="preparaModifica(${g.rowIndex})" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2.5 py-1 rounded font-medium transition">✏️ Modifica</button>
+            </div>
+          </div>
+          
+          <div class="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-2 gap-1 mt-1">
+            <p><strong>RL/Arlo:</strong> ${g.rlArlo || '<i>N/D</i>'}</p>
+            <p><strong>Box/PTE:</strong> ${g.boxPte || '<i>N/D</i>'}</p>
+          </div>
+
+          <div class="text-sm text-gray-700 mt-1 space-y-1">
+            <p><strong>Note Guasto:</strong> ${g.noteGuasto || '<i>Nessuna</i>'}</p>
+            <p><strong>Note Riparazione:</strong> ${g.noteRiparazione || '<i>Nessuna</i>'}</p>
+            <p class="text-indigo-900 font-medium"><strong>Note Reali:</strong> ${g.noteReali || '<i>Nessuna</i>'}</p>
+          </div>
+
+          ${g.foto && g.foto.length > 0 ? `
+            <div class="flex gap-2 mt-2 flex-wrap">
+              ${g.foto.map(img => `<img src="${img}" class="w-14 h-14 object-cover rounded border cursor-pointer hover:opacity-80 shadow-sm" onclick="window.open('${img}')">`).join('')}
+            </div>
+          ` : ''}
+        `;
+        container.appendChild(card);
+      });
+    }
+  </script>
+</body>
+</html>
