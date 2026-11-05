@@ -180,6 +180,11 @@ function doPost(e) {
       return sendJSON({ result: "success", data: elencoGuasti() });
     }
 
+    if (action === "delete") {
+      return eliminaIntervento(data);
+    }
+
+    var vecchiLinkInviati = (data.foto || []).filter(function (f) { return !/^data:image\//.test(String(f)); });
     var fotoLinks = salvaFotoSuDrive(data.foto, data.wr);
     var fotoString = fotoLinks.join(" || ");
 
@@ -196,15 +201,24 @@ function doPost(e) {
       data.noteReali || "" // Colonna J: Note Reali
     ];
 
-    if (action === "update" && data.rowIndex) {
-      var rowIndex = parseInt(data.rowIndex, 10);
-      if (!(rowIndex >= 2 && rowIndex <= sheet.getLastRow())) {
-        return sendJSON({ result: "error", code: "row", message: "Riga da modificare non trovata." });
+    if (action === "update") {
+      var lock = LockService.getScriptLock();
+      lock.waitLock(20000);
+      try {
+        // Prima di modificare, controlla che la riga sia ancora quella giusta
+        var controllo = controllaRiga(data);
+        if (!controllo.ok) {
+          // Annulla: rimette nel cestino le foto appena caricate per questo tentativo
+          cestinaFotoRimosse(fotoLinks, vecchiLinkInviati);
+          return sendJSON({ result: "error", code: "row", message: controllo.message });
+        }
+        var vecchieFoto = leggiFotoCella(sheet.getRange(controllo.rowIndex, 9).getValue());
+        sheet.getRange(controllo.rowIndex, 1, 1, 10).setValues([valori]);
+        cestinaFotoRimosse(vecchieFoto, fotoLinks);
+        return sendJSON({ result: "success", message: "updated" });
+      } finally {
+        lock.releaseLock();
       }
-      var vecchieFoto = leggiFotoCella(sheet.getRange(rowIndex, 9).getValue());
-      sheet.getRange(rowIndex, 1, 1, 10).setValues([valori]);
-      cestinaFotoRimosse(vecchieFoto, fotoLinks);
-      return sendJSON({ result: "success", message: "updated" });
     }
 
     sheet.appendRow(valori);
@@ -212,6 +226,54 @@ function doPost(e) {
 
   } catch (error) {
     return sendJSON({ result: "error", code: "server", message: error.toString() });
+  }
+}
+
+// ---------------------------------------------------------------------
+//  Controllo riga ed eliminazione
+// ---------------------------------------------------------------------
+
+// Verifica che la riga indicata contenga ancora l'intervento atteso (stesso WR).
+// Evita di modificare/eliminare la riga sbagliata se il foglio è cambiato nel frattempo.
+function controllaRiga(data) {
+  var rowIndex = parseInt(data.rowIndex, 10);
+  if (!(rowIndex >= 2 && rowIndex <= sheet.getLastRow())) {
+    return { ok: false, message: "Intervento non trovato nel foglio. Ricarica la pagina e riprova." };
+  }
+  if (data.controlloWr !== undefined && data.controlloWr !== null && data.controlloWr !== "") {
+    var wrNelFoglio = sheet.getRange(rowIndex, 2).getValue();
+    if (String(wrNelFoglio).trim() !== String(data.controlloWr).trim()) {
+      return { ok: false, message: "Il foglio è cambiato nel frattempo (la riga non corrisponde più al WR " + data.controlloWr + "). Ricarica la pagina e riprova." };
+    }
+  }
+  return { ok: true, rowIndex: rowIndex };
+}
+
+// Sposta l'intervento nel foglio "Eliminati" (copia di sicurezza) e lo toglie da Foglio1.
+// Le foto su Drive NON vengono cancellate, così l'intervento si può recuperare.
+function eliminaIntervento(data) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var controllo = controllaRiga(data);
+    if (!controllo.ok) {
+      return sendJSON({ result: "error", code: "row", message: controllo.message });
+    }
+
+    var cestino = ss.getSheetByName("Eliminati");
+    if (!cestino) {
+      cestino = ss.insertSheet("Eliminati");
+      var intestazioni = sheet.getRange(1, 1, 1, 10).getValues()[0];
+      cestino.appendRow(intestazioni.concat(["Eliminato il"]));
+    }
+
+    var valori = sheet.getRange(controllo.rowIndex, 1, 1, 10).getValues()[0];
+    cestino.appendRow(valori.concat([new Date()]));
+    sheet.deleteRow(controllo.rowIndex);
+
+    return sendJSON({ result: "success", message: "deleted" });
+  } finally {
+    lock.releaseLock();
   }
 }
 

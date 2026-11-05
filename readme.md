@@ -3,7 +3,8 @@
 Applicazione web mobile-friendly per la registrazione, il monitoraggio e la gestione di interventi di manutenzione su linee in fibra e rame, con sincronizzazione in tempo reale su Google Sheets e gestione delle immagini.
 
 ## 🚀 Caratteristiche Principali
-- **CRUD Completo**: Inserimento di nuovi interventi e modalità di modifica rapida dei record esistenti.
+- **CRUD Completo**: Inserimento, modifica ed eliminazione degli interventi. Gli interventi eliminati vengono spostati nel foglio **"Eliminati"** (creato automaticamente), da cui si possono recuperare; le loro foto restano su Drive.
+- **Salvataggio verificato**: l'app conferma solo dopo la risposta dello script. Prima di modificare o eliminare, lo script controlla che la riga corrisponda ancora allo stesso WR, così non tocca mai l'intervento sbagliato.
 - **Database Google Sheets**: Utilizzo di unFoglio Google come database persistente e leggero.
 - **Gestione Foto Integrata**: Compressione automatica delle immagini lato client e salvataggio su Google Drive, con il link nel foglio.
 - **Accesso con PIN**: Il PIN è controllato dallo script Google, non è scritto nel codice pubblico.
