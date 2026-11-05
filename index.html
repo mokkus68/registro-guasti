@@ -63,6 +63,7 @@
 
       <form id="guastoForm" onsubmit="salvaGuasto(event)" class="space-y-4">
         <input type="hidden" id="editRowIndex" value="">
+        <input type="hidden" id="editWrOriginale" value="">
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -417,6 +418,7 @@
       const payload = {
         action: isEditing ? "update" : "insert",
         rowIndex: editIndex,
+        controlloWr: isEditing ? document.getElementById('editWrOriginale').value : undefined,
         data: document.getElementById('data').value,
         wr: parseInt(document.getElementById('wr').value),
         centrale: document.getElementById('centrale').value,
@@ -438,6 +440,7 @@
       } catch (err) {
         // Il modulo resta compilato, così non si perde niente
         alert("⚠️ Intervento NON salvato: " + err.message);
+        if (err.code === 'row') caricaGuasti();
         btn.innerText = isEditing ? "Aggiorna Intervento" : "Salva Intervento su Google Sheets";
       } finally {
         btn.disabled = false;
@@ -449,6 +452,7 @@
       if (!guasto) return;
 
       document.getElementById('editRowIndex').value = guasto.rowIndex;
+      document.getElementById('editWrOriginale').value = guasto.wr;
       document.getElementById('data').value = guasto.data || '';
       document.getElementById('wr').value = guasto.wr || '';
       document.getElementById('centrale').value = guasto.centrale || '';
@@ -469,6 +473,29 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    async function eliminaGuasto(rowIndex, btn) {
+      const guasto = guastiCache.find(g => g.rowIndex == rowIndex);
+      if (!guasto) return;
+
+      const ok = confirm(`Eliminare l'intervento WR #${guasto.wr}` +
+        ` del ${guasto.data} (${guasto.centrale})?\n\n` +
+        `Verrà spostato nel foglio "Eliminati" del file Google, da dove si può recuperare.`);
+      if (!ok) return;
+
+      btn.disabled = true;
+      btn.innerText = 'Eliminazione...';
+      try {
+        await chiamaScript({ action: 'delete', rowIndex: guasto.rowIndex, controlloWr: guasto.wr });
+        // Se lo stavi modificando, chiude la modifica
+        if (document.getElementById('editRowIndex').value == rowIndex) resetForm();
+        alert(`Intervento WR #${guasto.wr} eliminato.`);
+      } catch (err) {
+        alert("⚠️ Intervento NON eliminato: " + err.message);
+      }
+      // Ricarica sempre: dopo un'eliminazione i numeri di riga cambiano
+      caricaGuasti();
+    }
+
     function annullaModifica() {
       resetForm();
     }
@@ -476,6 +503,7 @@
     function resetForm() {
       document.getElementById('guastoForm').reset();
       document.getElementById('editRowIndex').value = '';
+      document.getElementById('editWrOriginale').value = '';
       document.getElementById('data').value = oggiStringa;
       document.getElementById('anteprimeFoto').innerHTML = '';
       fotoBase64 = [];
@@ -651,6 +679,7 @@
             <div class="flex items-center gap-2">
               <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeColor}">${g.tipoGuasto}</span>
               <button onclick="preparaModifica(${g.rowIndex})" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2.5 py-1 rounded font-medium transition">✏️ Modifica</button>
+              <button onclick="eliminaGuasto(${g.rowIndex}, this)" class="bg-red-600 hover:bg-red-700 text-white text-xs px-2.5 py-1 rounded font-medium transition disabled:opacity-60">🗑️ Elimina</button>
             </div>
           </div>
           
