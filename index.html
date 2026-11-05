@@ -71,7 +71,8 @@
 
           <div>
             <label class="block text-sm font-medium text-gray-700">3. Centrale</label>
-            <input type="text" id="centrale" required placeholder="Es. Milano Centro" class="mt-1 w-full p-2 border rounded-md">
+            <input type="text" id="centrale" required list="elencoCentrali" autocomplete="off" placeholder="Es. Milano Centro" class="mt-1 w-full p-2 border rounded-md">
+            <datalist id="elencoCentrali"></datalist>
           </div>
 
           <div>
@@ -121,22 +122,49 @@
       </form>
     </div>
 
-    <!-- Filtri e Selezione Data -->
-    <div class="bg-white p-4 rounded-lg shadow-md space-y-4">
-      <div class="flex flex-wrap gap-4 items-center justify-between">
-        <div class="flex items-center gap-2 flex-1 min-w-[250px]">
-          <label class="text-sm font-medium text-gray-700 whitespace-nowrap">📅 Visualizza Data:</label>
-          <input type="date" id="filtroData" onchange="filtraGuasti()" class="p-2 border rounded-md flex-1">
-          <button onclick="impostaOggi()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs px-3 py-2 rounded font-medium">Oggi</button>
-        </div>
-        <select id="filtroTipo" onchange="filtraGuasti()" class="p-2 border rounded-md">
-          <option value="Tutti">Tutti i tipi</option>
-          <option value="Rame">Solo Rame</option>
-          <option value="Fibra">Solo Fibra</option>
+    <!-- Visualizzazione per Data -->
+    <div class="bg-white p-4 rounded-lg shadow-md">
+      <div class="flex items-center gap-2 flex-wrap">
+        <label class="text-sm font-medium text-gray-700 whitespace-nowrap">📅 Visualizza Data:</label>
+        <input type="date" id="filtroData" onchange="cambiaData()" class="p-2 border rounded-md flex-1 min-w-[160px]">
+        <button onclick="impostaOggi()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs px-3 py-2 rounded font-medium">Oggi</button>
+      </div>
+    </div>
+
+    <!-- Ricerca per Centrale -->
+    <div class="bg-white p-4 rounded-lg shadow-md space-y-3">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-semibold text-gray-700">🔍 Ricerca per Centrale</h2>
+        <button id="btn-azzera-ricerca" onclick="azzeraRicerca()" class="hidden text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded font-medium">✕ Azzera ricerca</button>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700">1. Centrale</label>
+        <select id="filtroCentrale" onchange="cambiaCentrale()" class="mt-1 w-full p-2 border rounded-md">
+          <option value="">Seleziona una centrale...</option>
         </select>
       </div>
-      <div>
-        <input type="text" id="ricerca" oninput="filtraGuasti()" placeholder="Cerca per WR, Centrale, RL/Arlo, Box/PTE o Note..." class="p-2 border rounded-md w-full">
+
+      <div id="ricerca-dettagli" class="space-y-3 opacity-50 pointer-events-none">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">2. Tipo di Guasto</label>
+          <div class="mt-1 grid grid-cols-3 gap-2" id="filtroTipoBottoni">
+            <button type="button" data-tipo="Tutti" onclick="scegliTipo('Tutti')" class="tipo-btn p-2 border rounded-md text-sm font-medium">Tutti</button>
+            <button type="button" data-tipo="Fibra" onclick="scegliTipo('Fibra')" class="tipo-btn p-2 border rounded-md text-sm font-medium">Fibra</button>
+            <button type="button" data-tipo="Rame" onclick="scegliTipo('Rame')" class="tipo-btn p-2 border rounded-md text-sm font-medium">Rame</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">3. RL / Arlo</label>
+            <input type="text" id="filtroRlArlo" oninput="filtraGuasti()" placeholder="Cerca RL / Arlo..." class="mt-1 w-full p-2 border rounded-md" disabled>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">4. Box / PTE</label>
+            <input type="text" id="filtroBoxPte" oninput="filtraGuasti()" placeholder="Cerca Box / PTE..." class="mt-1 w-full p-2 border rounded-md" disabled>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -188,6 +216,7 @@
 
     let fotoBase64 = [];
     let guastiCache = [];
+    let tipoSelezionato = 'Tutti'; // Tipo scelto nella ricerca per centrale
     
     const oggiObj = new Date();
     const annoOggi = oggiObj.getFullYear();
@@ -197,6 +226,7 @@
 
     document.getElementById('data').value = oggiStringa;
     document.getElementById('filtroData').value = oggiStringa;
+    aggiornaStatoRicerca();
 
     function toggleConfig() {
       document.getElementById('config-panel').classList.toggle('hidden');
@@ -278,7 +308,16 @@
 
     function impostaOggi() {
       document.getElementById('filtroData').value = oggiStringa;
-      filtraGuasti();
+      cambiaData();
+    }
+
+    // Scegliere una data chiude la ricerca per centrale e torna alla vista del giorno
+    function cambiaData() {
+      if (document.getElementById('filtroCentrale').value) {
+        azzeraRicerca();
+      } else {
+        filtraGuasti();
+      }
     }
 
     async function salvaGuasto(e) {
@@ -383,42 +422,125 @@
         const response = await fetch(url);
         const data = await response.json();
         guastiCache = data.reverse();
+        aggiornaElencoCentrali();
         filtraGuasti();
       } catch (err) {
         container.innerHTML = "<p class='text-center text-gray-500'>Impossibile caricare la lista dal foglio (o foglio vuoto).</p>";
       }
     }
 
+    // --- RICERCA PER CENTRALE ---
+
+    // Normalizza un valore per i confronti (spazi e maiuscole non contano)
+    function norm(v) {
+      return (v === undefined || v === null) ? '' : v.toString().trim().replace(/\s+/g, ' ').toLowerCase();
+    }
+
+    // Ricava l'elenco delle centrali presenti nello storico, senza doppioni
+    function aggiornaElencoCentrali() {
+      const mappa = new Map();
+      guastiCache.forEach(g => {
+        const chiave = norm(g.centrale);
+        if (chiave && !mappa.has(chiave)) {
+          mappa.set(chiave, g.centrale.toString().trim().replace(/\s+/g, ' '));
+        }
+      });
+      const centrali = [...mappa.entries()].sort((a, b) => a[1].localeCompare(b[1], 'it', { sensitivity: 'base' }));
+
+      const select = document.getElementById('filtroCentrale');
+      const scelta = select.value;
+      select.innerHTML = '<option value="">Seleziona una centrale...</option>';
+      centrali.forEach(([chiave, nome]) => {
+        const conteggio = guastiCache.filter(g => norm(g.centrale) === chiave).length;
+        const opt = document.createElement('option');
+        opt.value = chiave;
+        opt.textContent = `${nome} (${conteggio})`;
+        select.appendChild(opt);
+      });
+      // Mantiene la centrale scelta dopo una nuova sincronizzazione
+      if (scelta && mappa.has(scelta)) select.value = scelta;
+
+      const datalist = document.getElementById('elencoCentrali');
+      datalist.innerHTML = '';
+      centrali.forEach(([, nome]) => {
+        const opt = document.createElement('option');
+        opt.value = nome;
+        datalist.appendChild(opt);
+      });
+
+      aggiornaStatoRicerca();
+    }
+
+    function cambiaCentrale() {
+      // Nuova centrale: riparte da tipo "Tutti" e campi vuoti
+      tipoSelezionato = 'Tutti';
+      document.getElementById('filtroRlArlo').value = '';
+      document.getElementById('filtroBoxPte').value = '';
+      aggiornaStatoRicerca();
+      filtraGuasti();
+    }
+
+    function scegliTipo(tipo) {
+      tipoSelezionato = tipo;
+      aggiornaStatoRicerca();
+      filtraGuasti();
+    }
+
+    function azzeraRicerca() {
+      document.getElementById('filtroCentrale').value = '';
+      cambiaCentrale();
+    }
+
+    // Abilita i passi successivi solo quando è scelta una centrale
+    function aggiornaStatoRicerca() {
+      const attiva = document.getElementById('filtroCentrale').value !== '';
+      const dettagli = document.getElementById('ricerca-dettagli');
+      dettagli.classList.toggle('opacity-50', !attiva);
+      dettagli.classList.toggle('pointer-events-none', !attiva);
+      document.getElementById('filtroRlArlo').disabled = !attiva;
+      document.getElementById('filtroBoxPte').disabled = !attiva;
+      document.getElementById('btn-azzera-ricerca').classList.toggle('hidden', !attiva);
+
+      document.querySelectorAll('.tipo-btn').forEach(btn => {
+        const t = btn.dataset.tipo;
+        const sel = t === tipoSelezionato;
+        btn.className = 'tipo-btn p-2 border rounded-md text-sm font-medium transition ' + (
+          !sel ? 'bg-white text-gray-700 hover:bg-gray-100' :
+          t === 'Fibra' ? 'bg-blue-600 border-blue-600 text-white' :
+          t === 'Rame' ? 'bg-amber-500 border-amber-500 text-white' :
+          'bg-gray-700 border-gray-700 text-white'
+        );
+      });
+    }
+
     function filtraGuasti() {
       const dataSelezionata = document.getElementById('filtroData').value;
-      const query = document.getElementById('ricerca').value.toLowerCase().trim();
-      const tipo = document.getElementById('filtroTipo').value;
-
+      const centrale = document.getElementById('filtroCentrale').value;
       const titoloLista = document.getElementById('lista-titolo');
-      if (query.length > 0) {
-        titoloLista.innerText = "Risultati ricerca globale";
-      } else if (dataSelezionata === oggiStringa) {
-        titoloLista.innerText = "Interventi di Oggi";
+
+      let filtrati;
+
+      if (centrale) {
+        // Ricerca per centrale su tutto lo storico
+        const qRl = norm(document.getElementById('filtroRlArlo').value);
+        const qBox = norm(document.getElementById('filtroBoxPte').value);
+
+        filtrati = guastiCache.filter(g =>
+          norm(g.centrale) === centrale &&
+          (tipoSelezionato === 'Tutti' || g.tipoGuasto === tipoSelezionato) &&
+          (!qRl || norm(g.rlArlo).includes(qRl)) &&
+          (!qBox || norm(g.boxPte).includes(qBox))
+        );
+
+        const select = document.getElementById('filtroCentrale');
+        const nome = select.options[select.selectedIndex].textContent.replace(/\s\(\d+\)$/, '');
+        const tipoTxt = tipoSelezionato === 'Tutti' ? '' : ' · ' + tipoSelezionato;
+        titoloLista.innerText = `🏢 ${nome}${tipoTxt} — ${filtrati.length} ${filtrati.length === 1 ? 'intervento' : 'interventi'}`;
       } else {
-        titoloLista.innerText = "Interventi del " + dataSelezionata;
+        // Nessuna centrale scelta: vista per data
+        filtrati = guastiCache.filter(g => !dataSelezionata || g.data === dataSelezionata);
+        titoloLista.innerText = dataSelezionata === oggiStringa ? "Interventi di Oggi" : "Interventi del " + dataSelezionata;
       }
-
-      const filtrati = guastiCache.filter(g => {
-        const matchData = query.length > 0 ? true : (!dataSelezionata || g.data === dataSelezionata);
-
-        const matchTesto = !query || 
-                           g.wr.toString().includes(query) ||
-                           g.centrale.toLowerCase().includes(query) ||
-                           (g.rlArlo && g.rlArlo.toString().toLowerCase().includes(query)) ||
-                           (g.boxPte && g.boxPte.toString().toLowerCase().includes(query)) ||
-                           (g.noteGuasto && g.noteGuasto.toLowerCase().includes(query)) ||
-                           (g.noteRiparazione && g.noteRiparazione.toLowerCase().includes(query)) ||
-                           (g.noteReali && g.noteReali.toLowerCase().includes(query));
-        
-        const matchTipo = tipo === 'Tutti' || g.tipoGuasto === tipo;
-
-        return matchData && matchTesto && matchTipo;
-      });
 
       mostraGuasti(filtrati);
     }
@@ -428,7 +550,7 @@
       container.innerHTML = '';
 
       if (!lista || lista.length === 0) {
-        container.innerHTML = "<p class='text-center text-gray-500 py-4'>Nessun guasto registrato per questa data o con questi filtri.</p>";
+        container.innerHTML = "<p class='text-center text-gray-500 py-4'>Nessun intervento trovato con questi filtri.</p>";
         return;
       }
 
