@@ -12,14 +12,20 @@
 
   <!-- Schermata di Login con PIN -->
   <div id="auth-overlay" class="fixed inset-0 bg-gray-900 z-50 flex items-center justify-center p-4">
-    <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full space-y-4 text-center">
+    <form onsubmit="verificaPin(event)" class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full space-y-4 text-center">
       <h2 class="text-xl font-bold text-gray-800">🔒 Accesso Riservato</h2>
+      <div id="auth-url-box" class="hidden text-left">
+        <label class="block text-xs font-medium text-gray-600 mb-1">URL Google Apps Script</label>
+        <input type="text" id="authUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full p-2 border rounded-md text-sm">
+      </div>
       <p class="text-xs text-gray-500">Inserisci il PIN segreto per accedere al registro.</p>
-      <input type="password" id="pinInput" placeholder="Inserisci PIN..." class="w-full p-2 border rounded-md text-center text-lg tracking-widest">
-      <button onclick="verificaPin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-md">
+      <input type="password" id="pinInput" inputmode="numeric" autocomplete="current-password" placeholder="Inserisci PIN..." class="w-full p-2 border rounded-md text-center text-lg tracking-widest">
+      <p id="auth-errore" class="hidden text-sm text-red-600 font-medium"></p>
+      <button type="submit" id="btnAccedi" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-md disabled:opacity-60">
         Accedi
       </button>
-    </div>
+      <button type="button" id="btnCambiaUrl" onclick="mostraCampoUrl()" class="text-xs text-gray-500 underline">Cambia URL dello script</button>
+    </form>
   </div>
 
   <div class="max-w-4xl mx-auto space-y-6">
@@ -182,17 +188,89 @@
 
   <script>
     // --- GESTIONE PIN DI SICUREZZA ---
-    const MIO_PIN = "7880"; // ⚠️ Cambia qui il tuo PIN segreto se desideri
+    // Il PIN non è scritto qui: lo controlla lo script Google a ogni richiesta.
 
-    function verificaPin() {
-      const inserito = document.getElementById('pinInput').value;
-      if (inserito === MIO_PIN) {
+    function getPin() {
+      return sessionStorage.getItem('auth_pin') || '';
+    }
+
+    // Invia una richiesta allo script con il PIN e restituisce la risposta letta
+    async function chiamaScript(payload) {
+      const url = localStorage.getItem('gs_script_url');
+      if (!url) throw { code: 'no_url', message: "Configura prima l'URL di Google Script." };
+
+      let risposta;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ ...payload, pin: payload.pin ?? getPin() })
+        });
+        risposta = await res.json();
+      } catch (err) {
+        throw { code: 'rete', message: "Impossibile contattare lo script Google. Controlla la connessione e l'URL." };
+      }
+
+      if (!risposta || risposta.result !== 'success') {
+        const errore = { code: risposta && risposta.code, message: (risposta && risposta.message) || 'Risposta non valida dallo script.' };
+        if (errore.code === 'pin' || errore.code === 'locked') bloccaAccesso(errore.message);
+        throw errore;
+      }
+      return risposta;
+    }
+
+    function mostraErroreAccesso(msg) {
+      const el = document.getElementById('auth-errore');
+      el.innerText = msg || '';
+      el.classList.toggle('hidden', !msg);
+    }
+
+    function mostraCampoUrl() {
+      document.getElementById('authUrlInput').value = localStorage.getItem('gs_script_url') || '';
+      document.getElementById('auth-url-box').classList.remove('hidden');
+      document.getElementById('btnCambiaUrl').classList.add('hidden');
+    }
+
+    // Riporta alla schermata del PIN (PIN errato, sessione scaduta, ecc.)
+    function bloccaAccesso(msg) {
+      sessionStorage.removeItem('auth_pin');
+      guastiCache = [];
+      document.getElementById('pinInput').value = '';
+      document.getElementById('auth-overlay').style.display = 'flex';
+      if (!localStorage.getItem('gs_script_url')) mostraCampoUrl();
+      mostraErroreAccesso(msg);
+    }
+
+    async function verificaPin(e) {
+      if (e) e.preventDefault();
+      const pin = document.getElementById('pinInput').value.trim();
+      const urlBox = document.getElementById('auth-url-box');
+      if (!urlBox.classList.contains('hidden')) {
+        const nuovoUrl = document.getElementById('authUrlInput').value.trim();
+        if (!nuovoUrl) { mostraErroreAccesso("Inserisci l'URL dello script."); return; }
+        localStorage.setItem('gs_script_url', nuovoUrl);
+        document.getElementById('script-url').value = nuovoUrl;
+      }
+      if (!pin) { mostraErroreAccesso('Inserisci il PIN.'); return; }
+
+      const btn = document.getElementById('btnAccedi');
+      btn.disabled = true;
+      btn.innerText = 'Verifica in corso...';
+      mostraErroreAccesso('');
+
+      try {
+        const risposta = await chiamaScript({ action: 'list', pin });
+        sessionStorage.setItem('auth_pin', pin);
         document.getElementById('auth-overlay').style.display = 'none';
-        sessionStorage.setItem('auth_ok', 'true');
-        caricaGuasti(); // Carica i guasti subito dopo aver inserito il PIN corretto
-      } else {
-        alert("PIN errato!");
-        document.getElementById('pinInput').value = "";
+        urlBox.classList.add('hidden');
+        document.getElementById('btnCambiaUrl').classList.remove('hidden');
+        mostraDati(risposta.data);
+      } catch (err) {
+        document.getElementById('pinInput').value = '';
+        mostraErroreAccesso(err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Accedi';
       }
     }
 
@@ -200,16 +278,14 @@
       const savedUrl = localStorage.getItem('gs_script_url');
       if (savedUrl) {
         document.getElementById('script-url').value = savedUrl;
+      } else {
+        mostraCampoUrl();
       }
 
-      // Se la sessione è già autenticata, nascondi il blocco PIN e carica i dati
-      if (sessionStorage.getItem('auth_ok') === 'true') {
+      // Se in questa sessione il PIN è già stato verificato, carica direttamente i dati
+      if (getPin() && savedUrl) {
         document.getElementById('auth-overlay').style.display = 'none';
         caricaGuasti();
-      } else {
-        if (!savedUrl) {
-          document.getElementById('config-panel').classList.remove('hidden');
-        }
       }
     });
     // ---------------------------------
@@ -253,8 +329,9 @@
           img.src = event.target.result;
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 600;
-            const MAX_HEIGHT = 600;
+            // Le foto ora vanno su Drive: si può tenere una qualità migliore
+            const MAX_WIDTH = 1280;
+            const MAX_HEIGHT = 1280;
             let width = img.width;
             let height = img.height;
 
@@ -275,7 +352,7 @@
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
             
-            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
             fotoBase64.push(compressedBase64);
             aggiornaAnteprimeFoto();
           };
@@ -299,7 +376,7 @@
         wrapper.className = "relative inline-block";
         
         wrapper.innerHTML = `
-          <img src="${imgSrc}" class="w-16 h-16 object-cover rounded border shadow-sm">
+          <img src="${miniatura(imgSrc)}" referrerpolicy="no-referrer" class="w-16 h-16 object-cover rounded border shadow-sm">
           <button type="button" onclick="rimuoviFoto(${index})" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-red-700 shadow">×</button>
         `;
         anteprime.appendChild(wrapper);
@@ -335,6 +412,7 @@
       const isEditing = editIndex !== "";
 
       btn.innerText = isEditing ? "Aggiornamento in corso..." : "Invio in corso al Foglio Google...";
+      if (fotoBase64.some(f => f.startsWith('data:'))) btn.innerText += " (caricamento foto)";
 
       const payload = {
         action: isEditing ? "update" : "insert",
@@ -352,22 +430,17 @@
       };
 
       try {
-        await fetch(url, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(payload)
-        });
-
+        // Lo script risponde solo dopo aver davvero scritto nel foglio (e salvato le foto su Drive)
+        await chiamaScript(payload);
         alert(isEditing ? "Intervento aggiornato con successo!" : "Intervento salvato con successo nel Foglio Google!");
-        
         resetForm();
-        setTimeout(caricaGuasti, 2000);
+        caricaGuasti();
       } catch (err) {
-        alert("Errore di invio: " + err.message);
+        // Il modulo resta compilato, così non si perde niente
+        alert("⚠️ Intervento NON salvato: " + err.message);
+        btn.innerText = isEditing ? "Aggiorna Intervento" : "Salva Intervento su Google Sheets";
       } finally {
         btn.disabled = false;
-        btn.innerText = "Salva Intervento su Google Sheets";
       }
     }
 
@@ -419,14 +492,22 @@
       container.innerHTML = "<p class='text-center text-gray-500'>Sincronizzazione dati...</p>";
 
       try {
-        const response = await fetch(url);
-        const data = await response.json();
-        guastiCache = data.reverse();
-        aggiornaElencoCentrali();
-        filtraGuasti();
+        const risposta = await chiamaScript({ action: 'list' });
+        mostraDati(risposta.data);
       } catch (err) {
-        container.innerHTML = "<p class='text-center text-gray-500'>Impossibile caricare la lista dal foglio (o foglio vuoto).</p>";
+        container.innerHTML = `<p class='text-center text-gray-500'>Impossibile caricare la lista dal foglio: ${err.message}</p>`;
       }
+    }
+
+    function mostraDati(data) {
+      guastiCache = Array.isArray(data) ? data.reverse() : [];
+      aggiornaElencoCentrali();
+      filtraGuasti();
+    }
+
+    // Per le foto su Drive usa una miniatura piccola nella lista (più veloce da caricare)
+    function miniatura(src) {
+      return src.includes('drive.google.com/thumbnail') ? src.replace(/sz=w\d+/, 'sz=w300') : src;
     }
 
     // --- RICERCA PER CENTRALE ---
@@ -586,7 +667,7 @@
 
           ${g.foto && g.foto.length > 0 ? `
             <div class="flex gap-2 mt-2 flex-wrap">
-              ${g.foto.map(img => `<img src="${img}" class="w-14 h-14 object-cover rounded border cursor-pointer hover:opacity-80 shadow-sm" onclick="window.open('${img}')">`).join('')}
+              ${g.foto.map(img => `<img src="${miniatura(img)}" loading="lazy" referrerpolicy="no-referrer" class="w-14 h-14 object-cover rounded border cursor-pointer hover:opacity-80 shadow-sm" onclick="window.open('${img}')">`).join('')}
             </div>
           ` : ''}
         `;
