@@ -617,7 +617,7 @@
       if (!guasto) return;
 
       const ok = confirm(`Eliminare l'intervento WR #${guasto.wr}` +
-        ` del ${guasto.data} (${guasto.centrale})?\n\n` +
+        ` del ${dataItaliana(guasto.data)} (${guasto.centrale})?\n\n` +
         `Verrà spostato nel foglio "Eliminati" del file Google, da dove si può recuperare.`);
       if (!ok) return;
 
@@ -955,10 +955,16 @@
       } else {
         // Nessuna centrale scelta: vista per data
         filtrati = elencoCompleto().filter(g => !dataSelezionata || g.data === dataSelezionata);
-        titoloLista.innerText = dataSelezionata === oggiStringa ? "Interventi di Oggi" : "Interventi del " + dataSelezionata;
+        titoloLista.innerText = dataSelezionata === oggiStringa ? "Interventi di Oggi" : "Interventi del " + dataItaliana(dataSelezionata);
       }
 
       mostraGuasti(filtrati);
+    }
+
+    // Da "2026-11-06" a "06/11/2026" (solo per la visualizzazione)
+    function dataItaliana(d) {
+      const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : (d || '');
     }
 
     function mostraGuasti(lista) {
@@ -988,7 +994,7 @@
           <div class="flex justify-between items-start flex-wrap gap-2">
             <div>
               <span class="font-bold text-gray-800 text-lg">WR #${g.wr}</span>
-              <span class="text-sm text-gray-500 ml-2">📅 ${g.data}</span>
+              <span class="text-sm text-gray-500 ml-2">📅 ${dataItaliana(g.data)}</span>
               <span class="text-sm font-semibold text-gray-700 ml-2">🏢 ${g.centrale}</span>
             </div>
             <div class="flex items-center gap-2">
