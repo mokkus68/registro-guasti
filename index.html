@@ -51,7 +51,7 @@
 
     <!-- Avviso offline -->
     <div id="avviso-offline" class="hidden bg-red-50 border border-red-300 text-red-800 p-3 rounded-lg text-sm font-medium">
-      📵 Sei offline: puoi consultare gli interventi già caricati, ma non puoi salvare, modificare o eliminare finché non torna la connessione.
+      📵 Sei offline: stai vedendo gli ultimi dati scaricati. Puoi registrare <b>nuovi interventi</b>: restano salvati sul telefono e vengono inviati da soli appena torna la connessione. Modifiche ed eliminazioni richiedono la connessione.
     </div>
 
     <!-- Modulo di Inserimento / Modifica -->
@@ -189,7 +189,68 @@
 
   </div>
 
+  <!-- Messaggio temporaneo (es. invio della coda completato) -->
+  <div id="toast" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-gray-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg max-w-[90vw] text-center"></div>
+
   <script>
+    // --- ARCHIVIO SUL TELEFONO (IndexedDB) ---
+    // Contiene l'ultima copia dei dati scaricati e la coda degli interventi da inviare.
+    const archivio = (() => {
+      let dbPromise = null;
+      function apri() {
+        if (!dbPromise) {
+          dbPromise = new Promise((resolve, reject) => {
+            const req = indexedDB.open('registro-guasti', 1);
+            req.onupgradeneeded = () => req.result.createObjectStore('kv');
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+          });
+        }
+        return dbPromise;
+      }
+      async function operazione(modo, fn) {
+        const db = await apri();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction('kv', modo);
+          const req = fn(tx.objectStore('kv'));
+          tx.oncomplete = () => resolve(req && req.result);
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+      return {
+        leggi: (k) => operazione('readonly', st => st.get(k)).catch(() => undefined),
+        scrivi: (k, v) => operazione('readwrite', st => st.put(v, k))
+      };
+    })();
+
+    // Ultimi dati scaricati
+    async function salvaCopiaLocale() {
+      try {
+        await archivio.scrivi('dati', { salvato: new Date().toISOString(), guasti: guastiCache });
+      } catch (e) { console.warn('Copia locale non salvata', e); }
+    }
+
+    // --- PIN ANCHE OFFLINE ---
+    // Dopo un accesso online riuscito si salva un'impronta del PIN (non il PIN),
+    // che permette di sbloccare offline i dati già presenti sul telefono.
+    async function impronta(pin, sale) {
+      const dati = new TextEncoder().encode(sale + ':' + pin);
+      const hash = await crypto.subtle.digest('SHA-256', dati);
+      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    async function ricordaPin(pin) {
+      try {
+        const sale = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+        localStorage.setItem('pin_offline', JSON.stringify({ sale, hash: await impronta(pin, sale) }));
+      } catch (e) { /* uso offline non disponibile su questo browser */ }
+    }
+    async function pinValidoOffline(pin) {
+      try {
+        const salvato = JSON.parse(localStorage.getItem('pin_offline') || 'null');
+        return !!salvato && (await impronta(pin, salvato.sale)) === salvato.hash;
+      } catch (e) { return false; }
+    }
+
     // --- GESTIONE PIN DI SICUREZZA ---
     // Il PIN non è scritto qui: lo controlla lo script Google a ogni richiesta.
 
@@ -266,25 +327,54 @@
       btn.innerText = 'Verifica in corso...';
       mostraErroreAccesso('');
 
-      try {
-        const risposta = await chiamaScript({ action: 'list', pin });
+      const entra = () => {
         sessionStorage.setItem('auth_pin', pin);
         document.getElementById('auth-overlay').style.display = 'none';
         urlBox.classList.add('hidden');
         document.getElementById('btnCambiaUrl').classList.remove('hidden');
+      };
+
+      try {
+        const risposta = await chiamaScript({ action: 'list', pin });
+        entra();
+        await ricordaPin(pin);
+        if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
         mostraDati(risposta.data);
+        if (codaInvio.length) inviaCoda();
       } catch (err) {
+        if (err.code === 'rete') {
+          // Nessuna connessione: prova l'accesso con i dati salvati sul telefono
+          if (await pinValidoOffline(pin)) {
+            entra();
+            await caricaCopiaLocale();
+            mostraToast('📵 Accesso offline: stai vedendo gli ultimi dati scaricati.');
+            return;
+          }
+          mostraErroreAccesso(localStorage.getItem('pin_offline')
+            ? 'Sei offline e il PIN non corrisponde.'
+            : "Sei offline. Per usare l'app senza rete serve almeno un accesso fatto con la connessione.");
+        } else {
+          mostraErroreAccesso(err.message);
+        }
         document.getElementById('pinInput').value = '';
-        mostraErroreAccesso(err.message);
       } finally {
         btn.disabled = false;
         btn.innerText = 'Accedi';
       }
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
+      // Permette di aprire l'app anche senza connessione
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+        navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker non registrato', err));
+      }
+
       const savedUrl = localStorage.getItem('gs_script_url');
       if (!savedUrl) mostraCampoUrl();
+
+      codaInvio = (await archivio.leggi('coda')) || [];
+      const copia = await archivio.leggi('dati');
+      if (copia && copia.salvato) ultimaSincronizzazione = new Date(copia.salvato);
       aggiornaStatoConnessione(navigator.onLine ? 'attesa' : 'offline');
 
       // Se in questa sessione il PIN è già stato verificato, carica direttamente i dati
@@ -297,6 +387,8 @@
 
     let fotoBase64 = [];
     let guastiCache = [];
+    let codaInvio = [];        // interventi salvati sul telefono, da inviare al foglio
+    let invioInCorso = false;
     let tipoSelezionato = 'Tutti'; // Tipo scelto nella ricerca per centrale
     
     const oggiObj = new Date();
@@ -313,12 +405,17 @@
     let ultimaSincronizzazione = null;
 
     function oraCorta(d) {
-      return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      const ora = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      const stessoGiorno = d.toDateString() === new Date().toDateString();
+      return stessoGiorno ? ora : d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) + ' ' + ora;
     }
 
     // stato: 'online' | 'offline' | 'irraggiungibile' | 'attesa'
+    let statoAttuale = 'attesa';
     function aggiornaStatoConnessione(stato) {
       if (stato === 'online') ultimaSincronizzazione = new Date();
+      stato = stato || statoAttuale;
+      statoAttuale = stato;
       const box = document.getElementById('stato-connessione');
       const pallino = document.getElementById('stato-pallino');
       const testo = document.getElementById('stato-testo');
@@ -330,7 +427,8 @@
         irraggiungibile: ['bg-amber-50 text-amber-800 border-amber-300',       'bg-amber-500',   'Script non raggiungibile'],
         attesa:          ['bg-gray-100 text-gray-600 border-gray-300',          'bg-gray-400',    'Online · in attesa di accesso']
       };
-      const [cls, dot, txt] = stili[stato] || stili.attesa;
+      let [cls, dot, txt] = stili[stato] || stili.attesa;
+      if (codaInvio.length) txt += ` · ⏳ ${codaInvio.length} da inviare`;
       box.className = 'px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ' + cls;
       pallino.className = 'w-2.5 h-2.5 rounded-full ' + dot + (stato === 'online' ? '' : ' animate-pulse');
       testo.innerText = txt;
@@ -339,7 +437,7 @@
 
     function riprovaConnessione() {
       if (!navigator.onLine) { aggiornaStatoConnessione('offline'); return; }
-      if (getPin()) caricaGuasti();
+      if (getPin()) caricaGuasti();   // aggiorna i dati e poi invia la coda
     }
 
     window.addEventListener('offline', () => aggiornaStatoConnessione('offline'));
@@ -437,16 +535,16 @@
         bloccaAccesso("Inserisci l'URL dello script.");
         return;
       }
-      if (!navigator.onLine) {
-        aggiornaStatoConnessione('offline');
-        alert("📵 Sei offline: l'intervento non può essere salvato adesso.\nIl modulo resta compilato: riprova quando torna la connessione.");
-        return;
-      }
-
       const btn = document.getElementById('btnSalva');
-      btn.disabled = true;
       const editIndex = document.getElementById('editRowIndex').value;
       const isEditing = editIndex !== "";
+
+      if (!navigator.onLine && isEditing) {
+        aggiornaStatoConnessione('offline');
+        alert("📵 Sei offline: le modifiche richiedono la connessione.\nIl modulo resta compilato: riprova quando torna la rete.");
+        return;
+      }
+      btn.disabled = true;
 
       btn.innerText = isEditing ? "Aggiornamento in corso..." : "Invio in corso al Foglio Google...";
       if (fotoBase64.some(f => f.startsWith('data:'))) btn.innerText += " (caricamento foto)";
@@ -467,6 +565,13 @@
         foto: fotoBase64
       };
 
+      // Senza rete: il nuovo intervento resta sul telefono e parte appena torna la connessione
+      if (!isEditing && !navigator.onLine) {
+        await mettiInCoda(payload);
+        btn.disabled = false;
+        return;
+      }
+
       try {
         // Lo script risponde solo dopo aver davvero scritto nel foglio (e salvato le foto su Drive)
         await chiamaScript(payload);
@@ -474,6 +579,11 @@
         resetForm();
         caricaGuasti();
       } catch (err) {
+        if (err.code === 'rete' && !isEditing) {
+          // Rete assente o instabile: lo tiene sul telefono invece di perderlo
+          await mettiInCoda(payload);
+          return;
+        }
         // Il modulo resta compilato, così non si perde niente
         alert("⚠️ Intervento NON salvato: " + err.message);
         if (err.code === 'row') caricaGuasti();
@@ -548,21 +658,118 @@
       document.getElementById('btn-annulla-modifica').classList.add('hidden');
     }
 
+    // --- CODA DEGLI INTERVENTI DA INVIARE ---
+
+    async function salvaCoda() {
+      try { await archivio.scrivi('coda', codaInvio); }
+      catch (e) { alert('⚠️ Impossibile salvare sul telefono: ' + e.message); throw e; }
+    }
+
+    async function mettiInCoda(payload) {
+      const elemento = { idCoda: Date.now() + '-' + Math.random().toString(36).slice(2, 7), creato: new Date().toISOString(), payload };
+      codaInvio.push(elemento);
+      try { await salvaCoda(); } catch (e) { codaInvio.pop(); return; }
+      resetForm();
+      aggiornaStatoConnessione();
+      aggiornaElencoCentrali();
+      filtraGuasti();
+      alert("💾 Intervento salvato sul telefono.\nVerrà inviato al Foglio Google appena torna la connessione.");
+    }
+
+    async function annullaInvio(idCoda) {
+      const el = codaInvio.find(c => c.idCoda === idCoda);
+      if (!el || !confirm(`Annullare l'invio dell'intervento WR #${el.payload.wr}?\nNon è ancora nel Foglio Google: verrà cancellato dal telefono.`)) return;
+      codaInvio = codaInvio.filter(c => c.idCoda !== idCoda);
+      await salvaCoda();
+      aggiornaStatoConnessione();
+      aggiornaElencoCentrali();
+      filtraGuasti();
+    }
+
+    // Già presente nel foglio? (es. inviato, ma la risposta si era persa)
+    function giaNelFoglio(p) {
+      return guastiCache.some(g => String(g.wr) === String(p.wr) && g.data === p.data &&
+        norm(g.centrale) === norm(p.centrale) && g.tipoGuasto === p.tipoGuasto &&
+        norm(g.rlArlo) === norm(p.rlArlo) && norm(g.boxPte) === norm(p.boxPte));
+    }
+
+    async function inviaCoda() {
+      if (invioInCorso || !codaInvio.length || !getPin() || !navigator.onLine) return;
+      invioInCorso = true;
+      let inviati = 0, errori = 0;
+      try {
+        for (const el of [...codaInvio]) {
+          if (giaNelFoglio(el.payload)) {
+            codaInvio = codaInvio.filter(c => c.idCoda !== el.idCoda);
+            await salvaCoda();
+            continue;
+          }
+          try {
+            await chiamaScript(el.payload);
+            codaInvio = codaInvio.filter(c => c.idCoda !== el.idCoda);
+            await salvaCoda();
+            inviati++;
+          } catch (err) {
+            if (err.code === 'rete' || err.code === 'pin' || err.code === 'locked') break;
+            el.errore = err.message;
+            await salvaCoda();
+            errori++;
+          }
+        }
+        if (inviati) {
+          const risposta = await chiamaScript({ action: 'list' });
+          mostraDati(risposta.data);
+          mostraToast(`✅ ${inviati} ${inviati === 1 ? 'intervento inviato' : 'interventi inviati'} al Foglio Google`);
+        }
+        if (errori) mostraToast(`⚠️ ${errori} ${errori === 1 ? 'intervento non inviato' : 'interventi non inviati'}: controlla i dettagli nella lista`);
+      } catch (e) {
+        /* la rete è caduta di nuovo: riproverà più tardi */
+      } finally {
+        invioInCorso = false;
+        aggiornaStatoConnessione();
+        filtraGuasti();
+      }
+    }
+
+    let timerToast = null;
+    function mostraToast(msg) {
+      const t = document.getElementById('toast');
+      t.innerText = msg;
+      t.classList.remove('hidden');
+      clearTimeout(timerToast);
+      timerToast = setTimeout(() => t.classList.add('hidden'), 4500);
+    }
+
+    // Mostra subito gli ultimi dati salvati sul telefono
+    async function caricaCopiaLocale() {
+      const copia = await archivio.leggi('dati');
+      if (copia && Array.isArray(copia.guasti)) {
+        guastiCache = copia.guasti;
+        if (copia.salvato) ultimaSincronizzazione = new Date(copia.salvato);
+      }
+      aggiornaElencoCentrali();
+      filtraGuasti();
+      aggiornaStatoConnessione(navigator.onLine ? undefined : 'offline');
+      return !!copia;
+    }
+
     async function caricaGuasti() {
       const url = localStorage.getItem('gs_script_url');
       if (!url) return;
 
       const container = document.getElementById('listaGuasti');
-      // Se ci sono già dati a schermo li lascia visibili durante l'aggiornamento
+      // Mostra subito la copia sul telefono, poi la aggiorna dalla rete
       if (guastiCache.length === 0) {
-        container.innerHTML = "<p class='text-center text-gray-500'>Sincronizzazione dati...</p>";
+        const haCopia = await caricaCopiaLocale();
+        if (!haCopia) container.innerHTML = "<p class='text-center text-gray-500'>Sincronizzazione dati...</p>";
       }
 
       try {
         const risposta = await chiamaScript({ action: 'list' });
         mostraDati(risposta.data);
+        if (codaInvio.length) inviaCoda();
       } catch (err) {
-        if (err.code === 'rete' && guastiCache.length > 0) {
+        if (err.code === 'rete' && (guastiCache.length > 0 || codaInvio.length > 0)) {
           // Senza rete: continua a mostrare gli ultimi dati scaricati
           filtraGuasti();
         } else {
@@ -573,8 +780,15 @@
 
     function mostraDati(data) {
       guastiCache = Array.isArray(data) ? data.reverse() : [];
+      salvaCopiaLocale();
       aggiornaElencoCentrali();
       filtraGuasti();
+    }
+
+    // Interventi in coda (non ancora nel foglio) + interventi del foglio
+    function elencoCompleto() {
+      const inCoda = codaInvio.map(c => ({ ...c.payload, foto: c.payload.foto || [], inCoda: true, idCoda: c.idCoda, errore: c.errore }));
+      return [...inCoda.reverse(), ...guastiCache];
     }
 
     // Per le foto su Drive usa una miniatura piccola nella lista (più veloce da caricare)
@@ -592,7 +806,8 @@
     // Ricava l'elenco delle centrali presenti nello storico, senza doppioni
     function aggiornaElencoCentrali() {
       const mappa = new Map();
-      guastiCache.forEach(g => {
+      const tutti = elencoCompleto();
+      tutti.forEach(g => {
         const chiave = norm(g.centrale);
         if (chiave && !mappa.has(chiave)) {
           mappa.set(chiave, g.centrale.toString().trim().replace(/\s+/g, ' '));
@@ -604,7 +819,7 @@
       const scelta = select.value;
       select.innerHTML = '<option value="">Seleziona una centrale...</option>';
       centrali.forEach(([chiave, nome]) => {
-        const conteggio = guastiCache.filter(g => norm(g.centrale) === chiave).length;
+        const conteggio = tutti.filter(g => norm(g.centrale) === chiave).length;
         const opt = document.createElement('option');
         opt.value = chiave;
         opt.textContent = `${nome} (${conteggio})`;
@@ -678,7 +893,7 @@
         const qRl = norm(document.getElementById('filtroRlArlo').value);
         const qBox = norm(document.getElementById('filtroBoxPte').value);
 
-        filtrati = guastiCache.filter(g =>
+        filtrati = elencoCompleto().filter(g =>
           norm(g.centrale) === centrale &&
           (tipoSelezionato === 'Tutti' || g.tipoGuasto === tipoSelezionato) &&
           (!qRl || norm(g.rlArlo).includes(qRl)) &&
@@ -691,7 +906,7 @@
         titoloLista.innerText = `🏢 ${nome}${tipoTxt} — ${filtrati.length} ${filtrati.length === 1 ? 'intervento' : 'interventi'}`;
       } else {
         // Nessuna centrale scelta: vista per data
-        filtrati = guastiCache.filter(g => !dataSelezionata || g.data === dataSelezionata);
+        filtrati = elencoCompleto().filter(g => !dataSelezionata || g.data === dataSelezionata);
         titoloLista.innerText = dataSelezionata === oggiStringa ? "Interventi di Oggi" : "Interventi del " + dataSelezionata;
       }
 
@@ -711,7 +926,15 @@
         const badgeColor = g.tipoGuasto === 'Rame' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-blue-100 text-blue-800 border-blue-300';
         
         const card = document.createElement('div');
-        card.className = "border rounded-lg p-4 bg-gray-50 hover:bg-white transition flex flex-col gap-2";
+        card.className = g.inCoda
+          ? "border-2 border-dashed border-violet-300 rounded-lg p-4 bg-violet-50 flex flex-col gap-2"
+          : "border rounded-lg p-4 bg-gray-50 hover:bg-white transition flex flex-col gap-2";
+
+        const pulsanti = g.inCoda
+          ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-violet-100 text-violet-800 border-violet-300">⏳ In attesa di invio</span>
+             <button onclick="annullaInvio('${g.idCoda}')" class="bg-gray-500 hover:bg-gray-600 text-white text-xs px-2.5 py-1 rounded font-medium transition">✕ Annulla invio</button>`
+          : `<button onclick="preparaModifica(${g.rowIndex})" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2.5 py-1 rounded font-medium transition">✏️ Modifica</button>
+             <button onclick="eliminaGuasto(${g.rowIndex}, this)" class="bg-red-600 hover:bg-red-700 text-white text-xs px-2.5 py-1 rounded font-medium transition disabled:opacity-60">🗑️ Elimina</button>`;
 
         card.innerHTML = `
           <div class="flex justify-between items-start flex-wrap gap-2">
@@ -722,10 +945,10 @@
             </div>
             <div class="flex items-center gap-2">
               <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeColor}">${g.tipoGuasto}</span>
-              <button onclick="preparaModifica(${g.rowIndex})" class="bg-amber-500 hover:bg-amber-600 text-white text-xs px-2.5 py-1 rounded font-medium transition">✏️ Modifica</button>
-              <button onclick="eliminaGuasto(${g.rowIndex}, this)" class="bg-red-600 hover:bg-red-700 text-white text-xs px-2.5 py-1 rounded font-medium transition disabled:opacity-60">🗑️ Elimina</button>
+              ${pulsanti}
             </div>
           </div>
+          ${g.errore ? `<p class="text-sm text-red-700 font-medium">⚠️ Invio non riuscito: ${g.errore} — verrà ritentato.</p>` : ''}
           
           <div class="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-2 gap-1 mt-1">
             <p><strong>RL/Arlo:</strong> ${g.rlArlo || '<i>N/D</i>'}</p>
@@ -740,7 +963,7 @@
 
           ${g.foto && g.foto.length > 0 ? `
             <div class="flex gap-2 mt-2 flex-wrap">
-              ${g.foto.map(img => `<img src="${miniatura(img)}" loading="lazy" referrerpolicy="no-referrer" class="w-14 h-14 object-cover rounded border cursor-pointer hover:opacity-80 shadow-sm" onclick="window.open('${img}')">`).join('')}
+              ${g.foto.map(img => `<img src="${miniatura(img)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null; this.removeAttribute('src'); this.alt='📷'; this.title='Foto non disponibile offline'; this.classList.add('bg-gray-200')" class="w-14 h-14 object-cover rounded border cursor-pointer hover:opacity-80 shadow-sm text-center text-xl" onclick="window.open('${img}')">`).join('')}
             </div>
           ` : ''}
         `;
