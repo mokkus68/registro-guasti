@@ -162,11 +162,15 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-sm font-medium text-gray-700">3. RL / Arlo</label>
-            <input type="text" id="filtroRlArlo" oninput="filtraGuasti()" placeholder="Cerca RL / Arlo..." class="mt-1 w-full p-2 border rounded-md" disabled>
+            <select id="filtroRlArlo" onchange="cambiaRl()" class="mt-1 w-full p-2 border rounded-md bg-white" disabled>
+              <option value="">Tutti gli RL / Arlo</option>
+            </select>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">4. Box / PTE</label>
-            <input type="text" id="filtroBoxPte" oninput="filtraGuasti()" placeholder="Cerca Box / PTE..." class="mt-1 w-full p-2 border rounded-md" disabled>
+            <select id="filtroBoxPte" onchange="filtraGuasti()" class="mt-1 w-full p-2 border rounded-md bg-white" disabled>
+              <option value="">Tutti i Box / PTE</option>
+            </select>
           </div>
         </div>
       </div>
@@ -829,7 +833,7 @@
     }
 
     function cambiaCentrale() {
-      // Nuova centrale: riparte da tipo "Tutti" e campi vuoti
+      // Nuova centrale: riparte da tipo "Tutti" e menu azzerati
       tipoSelezionato = 'Tutti';
       document.getElementById('filtroRlArlo').value = '';
       document.getElementById('filtroBoxPte').value = '';
@@ -841,6 +845,60 @@
       tipoSelezionato = tipo;
       aggiornaStatoRicerca();
       filtraGuasti();
+    }
+
+    function cambiaRl() {
+      // Nuovo RL/Arlo: il menu Box/PTE mostra solo i box di quell'RL
+      document.getElementById('filtroBoxPte').value = '';
+      aggiornaMenuRlBox();
+      filtraGuasti();
+    }
+
+    // Riempie un menu con i valori (senza doppioni) e il numero di interventi
+    function riempiMenu(select, lista, campo, testoTutti) {
+      const scelta = select.value;
+      const mappa = new Map();
+      lista.forEach(g => {
+        const chiave = norm(g[campo]);
+        if (!chiave) return;
+        const scritto = g[campo].toString().trim().replace(/\s+/g, ' ');
+        if (!mappa.has(chiave)) mappa.set(chiave, { n: 0, varianti: {} });
+        const v = mappa.get(chiave);
+        v.n++;
+        v.varianti[scritto] = (v.varianti[scritto] || 0) + 1;
+      });
+      // Mostra il valore come è scritto più spesso (es. "RL-2" invece di "rl-2")
+      mappa.forEach(v => { v.nome = Object.entries(v.varianti).sort((x, y) => y[1] - x[1])[0][0]; });
+      const voci = [...mappa.entries()].sort((a, b) => a[1].nome.localeCompare(b[1].nome, 'it', { numeric: true, sensitivity: 'base' }));
+
+      select.innerHTML = '';
+      const tutti = document.createElement('option');
+      tutti.value = '';
+      tutti.textContent = voci.length ? testoTutti : testoTutti + ' (nessun valore inserito)';
+      select.appendChild(tutti);
+      voci.forEach(([chiave, v]) => {
+        const opt = document.createElement('option');
+        opt.value = chiave;
+        opt.textContent = `${v.nome} (${v.n})`;
+        select.appendChild(opt);
+      });
+      // Mantiene la scelta se esiste ancora, altrimenti torna a "Tutti"
+      select.value = mappa.has(scelta) ? scelta : '';
+    }
+
+    // Menu RL/Arlo e Box/PTE relativi alla centrale (e al tipo) scelti
+    function aggiornaMenuRlBox() {
+      const centrale = document.getElementById('filtroCentrale').value;
+      const base = centrale ? elencoCompleto().filter(g =>
+        norm(g.centrale) === centrale &&
+        (tipoSelezionato === 'Tutti' || g.tipoGuasto === tipoSelezionato)) : [];
+
+      const selRl = document.getElementById('filtroRlArlo');
+      riempiMenu(selRl, base, 'rlArlo', 'Tutti gli RL / Arlo');
+
+      const rl = selRl.value;
+      const perBox = rl ? base.filter(g => norm(g.rlArlo) === rl) : base;
+      riempiMenu(document.getElementById('filtroBoxPte'), perBox, 'boxPte', 'Tutti i Box / PTE');
     }
 
     function azzeraRicerca() {
@@ -857,6 +915,7 @@
       document.getElementById('filtroRlArlo').disabled = !attiva;
       document.getElementById('filtroBoxPte').disabled = !attiva;
       document.getElementById('btn-azzera-ricerca').classList.toggle('hidden', !attiva);
+      aggiornaMenuRlBox();
 
       document.querySelectorAll('.tipo-btn').forEach(btn => {
         const t = btn.dataset.tipo;
@@ -879,14 +938,14 @@
 
       if (centrale) {
         // Ricerca per centrale su tutto lo storico
-        const qRl = norm(document.getElementById('filtroRlArlo').value);
-        const qBox = norm(document.getElementById('filtroBoxPte').value);
+        const qRl = document.getElementById('filtroRlArlo').value;
+        const qBox = document.getElementById('filtroBoxPte').value;
 
         filtrati = elencoCompleto().filter(g =>
           norm(g.centrale) === centrale &&
           (tipoSelezionato === 'Tutti' || g.tipoGuasto === tipoSelezionato) &&
-          (!qRl || norm(g.rlArlo).includes(qRl)) &&
-          (!qBox || norm(g.boxPte).includes(qBox))
+          (!qRl || norm(g.rlArlo) === qRl) &&
+          (!qBox || norm(g.boxPte) === qBox)
         );
 
         const select = document.getElementById('filtroCentrale');
