@@ -52,5 +52,13 @@ Le foto vecchie salvate dentro le celle restano visibili. Per spostarle su Drive
 
 ---
 
+## 📵 Uso offline
+- Dopo il primo accesso con la connessione, l'app si apre anche **senza rete** (service worker `sw.js`).
+- Offline si accede con lo stesso PIN: il telefono conserva solo un'impronta cifrata del PIN, non il PIN.
+- Si vedono gli **ultimi dati scaricati**, con la ricerca per centrale. L'indicatore in alto mostra quando sono stati aggiornati.
+- I **nuovi interventi** registrati offline restano salvati sul telefono, foto comprese, e vengono **inviati da soli** al ritorno della connessione. Fino all'invio compaiono nella lista con la scritta "⏳ In attesa di invio" e si possono annullare.
+- **Modifiche ed eliminazioni** richiedono la connessione.
+- Le foto su Drive già viste online restano visibili anche offline.
+
 ## 📱 Utilizzo come PWA (Progressive Web App)
 Puoi installare facilmente l'applicazione direttamente sulla schermata Home del tuo smartphone (Android o iOS) aprendo il link della web app dal browser e selezionando *"Aggiungi a schermata Home"*.
