@@ -31,22 +31,17 @@
   <div class="max-w-4xl mx-auto space-y-6">
 
     <!-- Header -->
-    <div class="bg-white p-6 rounded-lg shadow-md flex justify-between items-center flex-wrap gap-4">
+    <div class="bg-white p-6 rounded-lg shadow-md flex flex-col items-center text-center gap-3">
       <div>
-        <h1 class="text-2xl font-bold text-gray-800">🛠️ Registro Guasti & Foto</h1>
+        <h1 class="text-2xl font-bold text-gray-800">🛠️ Registro Guasti</h1>
         <p class="text-gray-500 text-sm">Sincronizzato direttamente con Google Sheets</p>
       </div>
-      <div class="flex items-center gap-2 flex-wrap">
-        <!-- Stato della connessione -->
-        <button type="button" id="stato-connessione" onclick="riprovaConnessione()" title="Tocca per aggiornare"
-          class="px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 bg-gray-100 text-gray-600 border-gray-300">
-          <span id="stato-pallino" class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
-          <span id="stato-testo">Verifica connessione...</span>
-        </button>
-        <button onclick="esci()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded text-xs font-medium">
-          🔒 Esci
-        </button>
-      </div>
+      <!-- Stato della connessione -->
+      <button type="button" id="stato-connessione" onclick="riprovaConnessione()" title="Tocca per aggiornare"
+        class="px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 bg-gray-100 text-gray-600 border-gray-300">
+        <span id="stato-pallino" class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
+        <span id="stato-testo">Verifica connessione...</span>
+      </button>
     </div>
 
     <!-- Avviso offline -->
@@ -445,12 +440,6 @@
       // Tornata la rete: riallinea subito i dati
       if (getPin()) caricaGuasti(); else aggiornaStatoConnessione('attesa');
     });
-
-    function esci() {
-      bloccaAccesso('');
-      document.getElementById('listaGuasti').innerHTML = "<p class='text-center text-gray-500'>Nessun guasto registrato o in caricamento...</p>";
-      resetForm();
-    }
 
     function gestisciFoto(e) {
       const files = e.target.files;
