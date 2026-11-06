@@ -4,7 +4,7 @@
 // - Grafica (Tailwind) e miniature delle foto su Drive: copia salvata, aggiornata quando possibile.
 // - Le richieste allo script Google (POST) non passano da qui.
 
-const VERSIONE = 'registro-guasti-v1';
+const VERSIONE = 'registro-guasti-v2';
 const CACHE_APP = VERSIONE + '-app';
 const CACHE_FOTO = 'registro-guasti-foto';
 const MAX_FOTO = 400;
@@ -15,7 +15,7 @@ const TAILWIND = 'https://cdn.tailwindcss.com';
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_APP);
-    await cache.addAll(FILE_APP);
+    await cache.addAll(FILE_APP.map(f => new Request(f, { cache: 'reload' })));
     try {
       const res = await fetch(new Request(TAILWIND, { mode: 'no-cors' }));
       await cache.put(TAILWIND, res);
@@ -37,7 +37,8 @@ self.addEventListener('activate', (event) => {
 async function primaLaRete(request, chiave) {
   const cache = await caches.open(CACHE_APP);
   try {
-    const res = await fetch(request);
+    // 'no-cache': chiede sempre a GitHub se c'è una versione nuova (niente copie vecchie di 10 minuti)
+    const res = await fetch(request.url, { cache: 'no-cache', credentials: 'same-origin' });
     if (res && (res.ok || res.type === 'opaque')) cache.put(chiave || request, res.clone());
     return res;
   } catch (e) {
