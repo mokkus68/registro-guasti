@@ -36,20 +36,22 @@
         <h1 class="text-2xl font-bold text-gray-800">🛠️ Registro Guasti & Foto</h1>
         <p class="text-gray-500 text-sm">Sincronizzato direttamente con Google Sheets</p>
       </div>
-      <button onclick="toggleConfig()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded text-sm flex items-center gap-1">
-        ⚙️ Imposta URL Google Script
-      </button>
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Stato della connessione -->
+        <button type="button" id="stato-connessione" onclick="riprovaConnessione()" title="Tocca per aggiornare"
+          class="px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 bg-gray-100 text-gray-600 border-gray-300">
+          <span id="stato-pallino" class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
+          <span id="stato-testo">Verifica connessione...</span>
+        </button>
+        <button onclick="esci()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded text-xs font-medium">
+          🔒 Esci
+        </button>
+      </div>
     </div>
 
-    <!-- Pannello Configurazione URL -->
-    <div id="config-panel" class="bg-blue-50 border border-blue-200 p-6 rounded-lg shadow-sm hidden">
-      <h2 class="text-lg font-semibold text-blue-900 mb-2">URL Google Apps Script</h2>
-      <p class="text-xs text-blue-700 mb-3">Incolla qui l'URL web ottenuto pubblicando lo script sul tuo Foglio Google.</p>
-      
-      <input type="text" id="script-url" placeholder="https://script.google.com/macros/s/.../exec" class="w-full p-2 border rounded text-sm mb-3">
-      <button onclick="saveScriptUrl()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded text-sm w-full">
-        Salva URL e Connetti
-      </button>
+    <!-- Avviso offline -->
+    <div id="avviso-offline" class="hidden bg-red-50 border border-red-300 text-red-800 p-3 rounded-lg text-sm font-medium">
+      📵 Sei offline: puoi consultare gli interventi già caricati, ma non puoi salvare, modificare o eliminare finché non torna la connessione.
     </div>
 
     <!-- Modulo di Inserimento / Modifica -->
@@ -199,6 +201,10 @@
     async function chiamaScript(payload) {
       const url = localStorage.getItem('gs_script_url');
       if (!url) throw { code: 'no_url', message: "Configura prima l'URL di Google Script." };
+      if (!navigator.onLine) {
+        aggiornaStatoConnessione('offline');
+        throw { code: 'rete', message: "Sei offline. Riprova quando torna la connessione." };
+      }
 
       let risposta;
       try {
@@ -209,8 +215,10 @@
         });
         risposta = await res.json();
       } catch (err) {
+        aggiornaStatoConnessione(navigator.onLine ? 'irraggiungibile' : 'offline');
         throw { code: 'rete', message: "Impossibile contattare lo script Google. Controlla la connessione e l'URL." };
       }
+      aggiornaStatoConnessione('online');
 
       if (!risposta || risposta.result !== 'success') {
         const errore = { code: risposta && risposta.code, message: (risposta && risposta.message) || 'Risposta non valida dallo script.' };
@@ -250,7 +258,6 @@
         const nuovoUrl = document.getElementById('authUrlInput').value.trim();
         if (!nuovoUrl) { mostraErroreAccesso("Inserisci l'URL dello script."); return; }
         localStorage.setItem('gs_script_url', nuovoUrl);
-        document.getElementById('script-url').value = nuovoUrl;
       }
       if (!pin) { mostraErroreAccesso('Inserisci il PIN.'); return; }
 
@@ -277,11 +284,8 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       const savedUrl = localStorage.getItem('gs_script_url');
-      if (savedUrl) {
-        document.getElementById('script-url').value = savedUrl;
-      } else {
-        mostraCampoUrl();
-      }
+      if (!savedUrl) mostraCampoUrl();
+      aggiornaStatoConnessione(navigator.onLine ? 'attesa' : 'offline');
 
       // Se in questa sessione il PIN è già stato verificato, carica direttamente i dati
       if (getPin() && savedUrl) {
@@ -305,20 +309,49 @@
     document.getElementById('filtroData').value = oggiStringa;
     aggiornaStatoRicerca();
 
-    function toggleConfig() {
-      document.getElementById('config-panel').classList.toggle('hidden');
+    // --- STATO DELLA CONNESSIONE ---
+    let ultimaSincronizzazione = null;
+
+    function oraCorta(d) {
+      return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     }
 
-    function saveScriptUrl() {
-      const url = document.getElementById('script-url').value.trim();
-      if (!url) {
-        alert("Inserisci un URL valido");
-        return;
-      }
-      localStorage.setItem('gs_script_url', url);
-      alert('URL salvato con successo!');
-      toggleConfig();
-      caricaGuasti();
+    // stato: 'online' | 'offline' | 'irraggiungibile' | 'attesa'
+    function aggiornaStatoConnessione(stato) {
+      if (stato === 'online') ultimaSincronizzazione = new Date();
+      const box = document.getElementById('stato-connessione');
+      const pallino = document.getElementById('stato-pallino');
+      const testo = document.getElementById('stato-testo');
+      const sync = ultimaSincronizzazione ? ' · agg. ' + oraCorta(ultimaSincronizzazione) : '';
+
+      const stili = {
+        online:          ['bg-emerald-50 text-emerald-800 border-emerald-300', 'bg-emerald-500', 'Online' + sync],
+        offline:         ['bg-red-50 text-red-800 border-red-300',             'bg-red-500',     'Offline' + sync],
+        irraggiungibile: ['bg-amber-50 text-amber-800 border-amber-300',       'bg-amber-500',   'Script non raggiungibile'],
+        attesa:          ['bg-gray-100 text-gray-600 border-gray-300',          'bg-gray-400',    'Online · in attesa di accesso']
+      };
+      const [cls, dot, txt] = stili[stato] || stili.attesa;
+      box.className = 'px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ' + cls;
+      pallino.className = 'w-2.5 h-2.5 rounded-full ' + dot + (stato === 'online' ? '' : ' animate-pulse');
+      testo.innerText = txt;
+      document.getElementById('avviso-offline').classList.toggle('hidden', stato !== 'offline');
+    }
+
+    function riprovaConnessione() {
+      if (!navigator.onLine) { aggiornaStatoConnessione('offline'); return; }
+      if (getPin()) caricaGuasti();
+    }
+
+    window.addEventListener('offline', () => aggiornaStatoConnessione('offline'));
+    window.addEventListener('online', () => {
+      // Tornata la rete: riallinea subito i dati
+      if (getPin()) caricaGuasti(); else aggiornaStatoConnessione('attesa');
+    });
+
+    function esci() {
+      bloccaAccesso('');
+      document.getElementById('listaGuasti').innerHTML = "<p class='text-center text-gray-500'>Nessun guasto registrato o in caricamento...</p>";
+      resetForm();
     }
 
     function gestisciFoto(e) {
@@ -400,10 +433,13 @@
 
     async function salvaGuasto(e) {
       e.preventDefault();
-      const url = localStorage.getItem('gs_script_url');
-      if (!url) {
-        alert("Configura prima l'URL di Google Script!");
-        toggleConfig();
+      if (!localStorage.getItem('gs_script_url')) {
+        bloccaAccesso("Inserisci l'URL dello script.");
+        return;
+      }
+      if (!navigator.onLine) {
+        aggiornaStatoConnessione('offline');
+        alert("📵 Sei offline: l'intervento non può essere salvato adesso.\nIl modulo resta compilato: riprova quando torna la connessione.");
         return;
       }
 
@@ -517,13 +553,21 @@
       if (!url) return;
 
       const container = document.getElementById('listaGuasti');
-      container.innerHTML = "<p class='text-center text-gray-500'>Sincronizzazione dati...</p>";
+      // Se ci sono già dati a schermo li lascia visibili durante l'aggiornamento
+      if (guastiCache.length === 0) {
+        container.innerHTML = "<p class='text-center text-gray-500'>Sincronizzazione dati...</p>";
+      }
 
       try {
         const risposta = await chiamaScript({ action: 'list' });
         mostraDati(risposta.data);
       } catch (err) {
-        container.innerHTML = `<p class='text-center text-gray-500'>Impossibile caricare la lista dal foglio: ${err.message}</p>`;
+        if (err.code === 'rete' && guastiCache.length > 0) {
+          // Senza rete: continua a mostrare gli ultimi dati scaricati
+          filtraGuasti();
+        } else {
+          container.innerHTML = `<p class='text-center text-gray-500'>Impossibile caricare la lista dal foglio: ${err.message}</p>`;
+        }
       }
     }
 
