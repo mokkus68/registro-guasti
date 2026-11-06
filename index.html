@@ -199,7 +199,7 @@
 
   <script>
     // Versione dell'app (maggiore.minore.correzione): va aumentata a ogni modifica
-    const VERSIONE_APP = '1.0.9';
+    const VERSIONE_APP = '1.0.10';
     document.getElementById('versione-app').innerText = 'v' + VERSIONE_APP;
 
     // --- ARCHIVIO SUL TELEFONO (IndexedDB) ---
@@ -971,8 +971,10 @@
         const tipoTxt = tipoSelezionato === 'Tutti' ? '' : ' · ' + tipoSelezionato;
         titoloLista.innerText = `🏢 ${nome}${tipoTxt} — ${filtrati.length} ${filtrati.length === 1 ? 'intervento' : 'interventi'}`;
       } else {
-        // Nessuna centrale scelta: vista per data
-        filtrati = elencoCompleto().filter(g => !dataSelezionata || g.data === dataSelezionata);
+        // Nessuna centrale scelta: vista per data, in ordine di immissione (il primo inserito in alto).
+        // elencoCompleto() è dal più recente al più vecchio: si inverte. Gli interventi ancora
+        // in attesa di invio sono gli ultimi inseriti, quindi finiscono in fondo.
+        filtrati = elencoCompleto().filter(g => !dataSelezionata || g.data === dataSelezionata).reverse();
         titoloLista.innerText = dataSelezionata === oggiStringa ? "Interventi di Oggi" : "Interventi del " + dataItaliana(dataSelezionata);
       }
 
