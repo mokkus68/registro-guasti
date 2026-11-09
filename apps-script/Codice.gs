@@ -7,10 +7,16 @@
 //  - Le foto nuove vengono salvate in una cartella di Google Drive
 //    ("Registro Guasti - Foto") e nel foglio resta solo il link.
 //  - Le foto vecchie, salvate come testo nella cella, restano leggibili.
+//  - Colonne: A Data, B WR, C Centrale, D RL/Arlo, E Box/PTE, F Tipo,
+//    G Note Guasto, H Note Riparazione, I Foto, J Note Reali,
+//    K Codice Chiusura, L Quantità (K e L si intitolano da sole al primo salvataggio).
 // =====================================================================
 
 var ss = SpreadsheetApp.getActiveSpreadsheet();
 var sheet = ss.getSheetByName("Foglio1");
+
+var NUM_COLONNE = 12;
+var INTESTAZIONI_NUOVE = { 11: "Codice Chiusura", 12: "Quantità" };
 
 var NOME_CARTELLA_FOTO = "Registro Guasti - Foto";
 var MAX_TENTATIVI_PIN = 10;      // tentativi errati prima del blocco
@@ -119,6 +125,14 @@ function leggiFotoCella(valore) {
   return testo ? testo.split(" || ") : [];
 }
 
+// Scrive i titoli delle colonne nuove (K, L) se mancano
+function controllaIntestazioni() {
+  Object.keys(INTESTAZIONI_NUOVE).forEach(function (col) {
+    var cella = sheet.getRange(1, parseInt(col, 10));
+    if (String(cella.getValue()).trim() === "") cella.setValue(INTESTAZIONI_NUOVE[col]);
+  });
+}
+
 // ---------------------------------------------------------------------
 //  Lettura dei dati
 // ---------------------------------------------------------------------
@@ -156,7 +170,9 @@ function elencoGuasti() {
       noteGuasto: row[6] || "",
       noteRiparazione: row[7] || "",
       foto: leggiFotoCella(row[8]),
-      noteReali: row[9] || ""
+      noteReali: row[9] || "",
+      codiceChiusura: row[10] || "",
+      quantita: row[11] || ""
     });
   }
   return result;
@@ -197,9 +213,12 @@ function doPost(e) {
       data.tipoGuasto || "",
       data.noteGuasto || "",
       data.noteRiparazione || "",
-      fotoString,          // Colonna I: Foto (link Drive)
-      data.noteReali || "" // Colonna J: Note Reali
+      fotoString,                // Colonna I: Foto (link Drive)
+      data.noteReali || "",      // Colonna J: Note Reali
+      data.codiceChiusura || "", // Colonna K: Codice Chiusura
+      data.quantita || ""        // Colonna L: Quantità
     ];
+    controllaIntestazioni();
 
     if (action === "update") {
       var lock = LockService.getScriptLock();
@@ -213,7 +232,7 @@ function doPost(e) {
           return sendJSON({ result: "error", code: "row", message: controllo.message });
         }
         var vecchieFoto = leggiFotoCella(sheet.getRange(controllo.rowIndex, 9).getValue());
-        sheet.getRange(controllo.rowIndex, 1, 1, 10).setValues([valori]);
+        sheet.getRange(controllo.rowIndex, 1, 1, NUM_COLONNE).setValues([valori]);
         cestinaFotoRimosse(vecchieFoto, fotoLinks);
         return sendJSON({ result: "success", message: "updated" });
       } finally {
@@ -260,15 +279,18 @@ function eliminaIntervento(data) {
       return sendJSON({ result: "error", code: "row", message: controllo.message });
     }
 
+    // Foglio "Eliminati": colonne A-J come Foglio1, K data di eliminazione, L Codice Chiusura, M Quantità
     var cestino = ss.getSheetByName("Eliminati");
     if (!cestino) {
       cestino = ss.insertSheet("Eliminati");
       var intestazioni = sheet.getRange(1, 1, 1, 10).getValues()[0];
-      cestino.appendRow(intestazioni.concat(["Eliminato il"]));
+      cestino.appendRow(intestazioni.concat(["Eliminato il", "Codice Chiusura", "Quantità"]));
+    } else if (String(cestino.getRange(1, 12).getValue()).trim() === "") {
+      cestino.getRange(1, 12, 1, 2).setValues([["Codice Chiusura", "Quantità"]]);
     }
 
-    var valori = sheet.getRange(controllo.rowIndex, 1, 1, 10).getValues()[0];
-    cestino.appendRow(valori.concat([new Date()]));
+    var valori = sheet.getRange(controllo.rowIndex, 1, 1, NUM_COLONNE).getValues()[0];
+    cestino.appendRow(valori.slice(0, 10).concat([new Date()], valori.slice(10, 12)));
     sheet.deleteRow(controllo.rowIndex);
 
     return sendJSON({ result: "success", message: "deleted" });
