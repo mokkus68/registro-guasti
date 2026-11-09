@@ -97,20 +97,38 @@
               <option value="Fibra">Fibra</option>
             </select>
           </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">7. Codice Chiusura</label>
+            <select id="codiceChiusura" class="mt-1 w-full p-2 border rounded-md bg-white">
+              <option value="">Seleziona codice...</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">8. Quantità</label>
+            <select id="quantita" class="mt-1 w-full p-2 border rounded-md bg-white">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </div>
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700">7. Note Guasto</label>
+          <label class="block text-sm font-medium text-gray-700">9. Note Guasto</label>
           <textarea id="noteGuasto" rows="2" placeholder="Descrizione del problema..." class="mt-1 w-full p-2 border rounded-md"></textarea>
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700">8. Note Riparazione</label>
+          <label class="block text-sm font-medium text-gray-700">10. Note Riparazione</label>
           <textarea id="noteRiparazione" rows="2" placeholder="Descrizione della soluzione..." class="mt-1 w-full p-2 border rounded-md"></textarea>
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700">9. Note Reali</label>
+          <label class="block text-sm font-medium text-gray-700">11. Note Reali</label>
           <textarea id="noteReali" rows="2" placeholder="Note reali aggiuntive..." class="mt-1 w-full p-2 border rounded-md"></textarea>
         </div>
 
@@ -199,8 +217,33 @@
 
   <script>
     // Versione dell'app (maggiore.minore.correzione): va aumentata a ogni modifica
-    const VERSIONE_APP = '1.0.11';
+    const VERSIONE_APP = '1.1.0';
     document.getElementById('versione-app').innerText = 'v' + VERSIONE_APP;
+
+    // Voci del menu "Codice Chiusura" (una per riga, come devono comparire nel menu)
+    const CODICI_CHIUSURA = [
+      "R - Riscontrato, provato cliente SI",
+      "W - Guasto cavo localizzato x impresa",
+      "A - Autoeliminato",
+      "N - Non riscontrato, provato cliente SI",
+      "6 - Guasto competenza OLO",
+    ];
+
+    // Riempie il menu dei codici; se un intervento vecchio ha un codice non più in elenco, lo aggiunge per non perderlo
+    function riempiCodiciChiusura(valoreAttuale) {
+      const sel = document.getElementById('codiceChiusura');
+      const voci = [...CODICI_CHIUSURA];
+      if (valoreAttuale && !voci.includes(valoreAttuale)) voci.push(valoreAttuale);
+      sel.innerHTML = '<option value="">Seleziona codice...</option>';
+      voci.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        sel.appendChild(opt);
+      });
+      sel.value = valoreAttuale || '';
+    }
+    riempiCodiciChiusura('');
 
     // --- ARCHIVIO SUL TELEFONO (IndexedDB) ---
     // Contiene l'ultima copia dei dati scaricati e la coda degli interventi da inviare.
@@ -573,6 +616,8 @@
         noteGuasto: document.getElementById('noteGuasto').value,
         noteRiparazione: document.getElementById('noteRiparazione').value,
         noteReali: document.getElementById('noteReali').value,
+        codiceChiusura: document.getElementById('codiceChiusura').value,
+        quantita: parseInt(document.getElementById('quantita').value, 10) || 1,
         foto: fotoBase64
       };
 
@@ -619,7 +664,10 @@
       document.getElementById('noteGuasto').value = guasto.noteGuasto || '';
       document.getElementById('noteRiparazione').value = guasto.noteRiparazione || '';
       document.getElementById('noteReali').value = guasto.noteReali || '';
-      
+      riempiCodiciChiusura(guasto.codiceChiusura ? String(guasto.codiceChiusura) : '');
+      const q = parseInt(guasto.quantita, 10);
+      document.getElementById('quantita').value = (q >= 1 && q <= 5) ? String(q) : '1';
+
       fotoBase64 = guasto.foto ? [...guasto.foto] : [];
       aggiornaAnteprimeFoto();
 
@@ -659,6 +707,8 @@
 
     function resetForm() {
       document.getElementById('guastoForm').reset();
+      riempiCodiciChiusura('');
+      document.getElementById('quantita').value = '1';
       document.getElementById('editRowIndex').value = '';
       document.getElementById('editWrOriginale').value = '';
       document.getElementById('data').value = oggiStringa;
@@ -1027,6 +1077,8 @@
           <div class="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-2 gap-1 mt-1">
             <p><strong>RL/Arlo:</strong> ${g.rlArlo || '<i>N/D</i>'}</p>
             <p><strong>Box/PTE:</strong> ${g.boxPte || '<i>N/D</i>'}</p>
+            <p><strong>Codice Chiusura:</strong> ${g.codiceChiusura || '<i>N/D</i>'}</p>
+            <p><strong>Quantità:</strong> ${g.quantita || '<i>N/D</i>'}</p>
           </div>
 
           <div class="text-sm text-gray-700 mt-1 space-y-1">
