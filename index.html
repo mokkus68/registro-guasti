@@ -97,16 +97,28 @@
               <option value="Fibra">Fibra</option>
             </select>
           </div>
+        </div>
 
+        <div>
+          <label class="block text-sm font-medium text-gray-700">7. Note Guasto</label>
+          <textarea id="noteGuasto" rows="2" placeholder="Descrizione del problema..." class="mt-1 w-full p-2 border rounded-md"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">8. Note Riparazione</label>
+          <textarea id="noteRiparazione" rows="2" placeholder="Descrizione della soluzione..." class="mt-1 w-full p-2 border rounded-md"></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">7. Codice Chiusura</label>
+            <label class="block text-sm font-medium text-gray-700">9. Codice Chiusura</label>
             <select id="codiceChiusura" class="mt-1 w-full p-2 border rounded-md bg-white">
               <option value="">Seleziona codice...</option>
             </select>
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700">8. Quantità</label>
+            <label class="block text-sm font-medium text-gray-700">10. Quantità</label>
             <select id="quantita" class="mt-1 w-full p-2 border rounded-md bg-white">
               <option value="1" selected>1</option>
               <option value="2">2</option>
@@ -115,16 +127,6 @@
               <option value="5">5</option>
             </select>
           </div>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700">9. Note Guasto</label>
-          <textarea id="noteGuasto" rows="2" placeholder="Descrizione del problema..." class="mt-1 w-full p-2 border rounded-md"></textarea>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700">10. Note Riparazione</label>
-          <textarea id="noteRiparazione" rows="2" placeholder="Descrizione della soluzione..." class="mt-1 w-full p-2 border rounded-md"></textarea>
         </div>
 
         <div>
@@ -217,7 +219,7 @@
 
   <script>
     // Versione dell'app (maggiore.minore.correzione): va aumentata a ogni modifica
-    const VERSIONE_APP = '1.1.0';
+    const VERSIONE_APP = '1.1.1';
     document.getElementById('versione-app').innerText = 'v' + VERSIONE_APP;
 
     // Voci del menu "Codice Chiusura" (una per riga, come devono comparire nel menu)
@@ -942,7 +944,8 @@
       select.innerHTML = '';
       const tutti = document.createElement('option');
       tutti.value = '';
-      tutti.textContent = voci.length ? testoTutti : testoTutti + ' (nessun valore inserito)';
+      const centraleScelta = document.getElementById('filtroCentrale').value !== '';
+      tutti.textContent = (voci.length || !centraleScelta) ? testoTutti : testoTutti + ' (nessun valore inserito)';
       select.appendChild(tutti);
       voci.forEach(([chiave, v]) => {
         const opt = document.createElement('option');
@@ -1077,13 +1080,12 @@
           <div class="text-sm text-gray-700 grid grid-cols-1 md:grid-cols-2 gap-1 mt-1">
             <p><strong>RL/Arlo:</strong> ${g.rlArlo || '<i>N/D</i>'}</p>
             <p><strong>Box/PTE:</strong> ${g.boxPte || '<i>N/D</i>'}</p>
-            <p><strong>Codice Chiusura:</strong> ${g.codiceChiusura || '<i>N/D</i>'}</p>
-            <p><strong>Quantità:</strong> ${g.quantita || '<i>N/D</i>'}</p>
           </div>
 
           <div class="text-sm text-gray-700 mt-1 space-y-1">
             <p><strong>Note Guasto:</strong> ${g.noteGuasto || '<i>Nessuna</i>'}</p>
             <p><strong>Note Riparazione:</strong> ${g.noteRiparazione || '<i>Nessuna</i>'}</p>
+            <p><strong>Codice Chiusura:</strong> ${g.codiceChiusura || '<i>N/D</i>'} &nbsp;·&nbsp; <strong>Quantità:</strong> ${g.quantita || '<i>N/D</i>'}</p>
             <p class="text-indigo-900 font-medium"><strong>Note Reali:</strong> ${g.noteReali || '<i>Nessuna</i>'}</p>
           </div>
 
