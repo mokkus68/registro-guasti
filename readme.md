@@ -52,6 +52,12 @@ Le foto vecchie salvate dentro le celle restano visibili. Per spostarle su Drive
 
 ---
 
+## 💾 Backup mensile
+L'ultimo giorno di ogni mese, tra le 23 e mezzanotte, lo script crea un file **.zip** con tutti i dati: il foglio completo in Excel e i CSV di Foglio1 ed Eliminati. Lo salva nella cartella Drive **"Registro Guasti - Backup"** e lo invia per email al proprietario del foglio. Le foto non sono incluse, perché restano nella cartella "Registro Guasti - Foto".
+- **Attivare:** nell'editor di Apps Script seleziona `attivaBackupMensile` e premi **Esegui**. Basta una volta: Google chiede di autorizzare email e connessioni esterne.
+- **Provare subito:** esegui `backupMensile`.
+- **Disattivare:** esegui `disattivaBackupMensile`.
+
 ## 📵 Uso offline
 - Dopo il primo accesso con la connessione, l'app si apre anche **senza rete** (service worker `sw.js`).
 - Offline si accede con lo stesso PIN: il telefono conserva solo un'impronta cifrata del PIN, non il PIN.
