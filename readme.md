@@ -23,7 +23,7 @@ Applicazione web mobile-friendly per la registrazione, il monitoraggio e la gest
 ## ⚙️ Guida alla Configurazione
 
 ### 1. Configurazione del Backend (Google Apps Script)
-1. Crea un nuovo **Google Sheet** con un foglio denominato `Foglio1`.
+1. Crea un nuovo **Google Sheet** con un foglio denominato `Interventi` (va bene anche `Foglio1`).
 2. Imposta le intestazioni nelle prime 10 colonne (dalla A alla J):
    - `Data` | `WR` | `Centrale` | `RL/Arlo` | `Box/PTE` | `TipoGuasto` | `NoteGuasto` | `NoteRiparazione` | `Foto` | `NoteReali`
 3. Nel foglio, vai su **Estensioni > Apps Script** e incolla il codice del file [`apps-script/Codice.gs`](apps-script/Codice.gs).
@@ -53,7 +53,7 @@ Le foto vecchie salvate dentro le celle restano visibili. Per spostarle su Drive
 ---
 
 ## 💾 Backup mensile
-L'ultimo giorno di ogni mese, tra le 23 e mezzanotte, lo script crea un file **.zip** con tutti i dati: il foglio completo in Excel e i CSV di Foglio1 ed Eliminati. Lo salva nella cartella Drive **"Registro Guasti - Backup"** e lo invia per email al proprietario del foglio. Le foto non sono incluse, perché restano nella cartella "Registro Guasti - Foto".
+L'ultimo giorno di ogni mese, tra le 23 e mezzanotte, lo script crea un file **.zip** con tutti i dati: il foglio completo in Excel e i CSV di Interventi ed Eliminati. Lo salva nella cartella Drive **"Registro Guasti - Backup"** e lo invia per email al proprietario del foglio. Le foto non sono incluse, perché restano nella cartella "Registro Guasti - Foto".
 - **Attivare:** nell'editor di Apps Script seleziona `attivaBackupMensile` e premi **Esegui**. Basta una volta: Google chiede di autorizzare email e connessioni esterne.
 - **Provare subito:** esegui `backupMensile`.
 - **Disattivare:** esegui `disattivaBackupMensile`.
