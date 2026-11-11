@@ -219,7 +219,7 @@
 
   <script>
     // Versione dell'app (maggiore.minore.correzione): va aumentata a ogni modifica
-    const VERSIONE_APP = '1.1.3';
+    const VERSIONE_APP = '1.1.4';
     document.getElementById('versione-app').innerText = 'v' + VERSIONE_APP;
 
     // Voci del menu "Codice Chiusura" (una per riga, come devono comparire nel menu)
@@ -1100,7 +1100,8 @@
           <div class="text-sm text-gray-700 mt-1 space-y-1">
             <p><strong>Note Guasto:</strong> ${g.noteGuasto || '<i>Nessuna</i>'}</p>
             <p><strong>Note Riparazione:</strong> ${g.noteRiparazione || '<i>Nessuna</i>'}</p>
-            <p><strong>Codice Chiusura:</strong> ${g.codiceChiusura || '<i>N/D</i>'} &nbsp;·&nbsp; <strong>Quantità:</strong> ${g.quantita || '<i>N/D</i>'}</p>
+            <p><strong>Codice Chiusura:</strong> ${g.codiceChiusura ? `<span class="text-blue-700 font-medium">${g.codiceChiusura}</span>` : '<i>N/D</i>'}</p>
+            <p><strong>Quantità:</strong> ${g.quantita ? `<span class="text-red-600 font-medium">${g.quantita}</span>` : '<i>N/D</i>'}</p>
             <p><strong>Note Reali:</strong> ${g.noteReali ? `<span class="text-green-700 font-medium">${g.noteReali}</span>` : '<i>Nessuna</i>'}</p>
           </div>
 
