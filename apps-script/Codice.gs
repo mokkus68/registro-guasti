@@ -13,7 +13,21 @@
 // =====================================================================
 
 var ss = SpreadsheetApp.getActiveSpreadsheet();
-var sheet = ss.getSheetByName("Foglio1");
+// Foglio con gli interventi: si chiama "Interventi" (prima era "Foglio1": va bene anche quel nome)
+var NOME_FOGLIO = "Interventi";
+var sheet = trovaFoglio([NOME_FOGLIO, "Foglio1"]);
+
+// Cerca la scheda per nome, senza badare a maiuscole e spazi in più
+function trovaFoglio(nomi) {
+  var cercati = nomi.map(function (n) { return n.trim().toLowerCase(); });
+  var schede = ss.getSheets();
+  for (var i = 0; i < cercati.length; i++) {
+    for (var j = 0; j < schede.length; j++) {
+      if (schede[j].getName().trim().toLowerCase() === cercati[i]) return schede[j];
+    }
+  }
+  return null;
+}
 
 var NUM_COLONNE = 12;
 var INTESTAZIONI_NUOVE = { 11: "Codice Chiusura", 12: "Quantità" };
@@ -186,6 +200,9 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
 
     var verifica = controllaPin(data.pin);
+    if (verifica.ok && !sheet) {
+      return sendJSON({ result: "error", code: "server", message: 'Scheda "' + NOME_FOGLIO + '" non trovata nel foglio Google: controlla il nome della scheda in basso.' });
+    }
     if (!verifica.ok) {
       return sendJSON({ result: "error", code: verifica.code, message: verifica.message });
     }
@@ -268,7 +285,7 @@ function controllaRiga(data) {
   return { ok: true, rowIndex: rowIndex };
 }
 
-// Sposta l'intervento nel foglio "Eliminati" (copia di sicurezza) e lo toglie da Foglio1.
+// Sposta l'intervento nel foglio "Eliminati" (copia di sicurezza) e lo toglie dal foglio Interventi.
 // Le foto su Drive NON vengono cancellate, così l'intervento si può recuperare.
 function eliminaIntervento(data) {
   var lock = LockService.getScriptLock();
@@ -279,7 +296,7 @@ function eliminaIntervento(data) {
       return sendJSON({ result: "error", code: "row", message: controllo.message });
     }
 
-    // Foglio "Eliminati": colonne A-J come Foglio1, K data di eliminazione, L Codice Chiusura, M Quantità
+    // Foglio "Eliminati": colonne A-J come Interventi, K data di eliminazione, L Codice Chiusura, M Quantità
     var cestino = ss.getSheetByName("Eliminati");
     if (!cestino) {
       cestino = ss.insertSheet("Eliminati");
@@ -337,7 +354,7 @@ function migraFotoEsistenti() {
 //  BACKUP MENSILE
 // ---------------------------------------------------------------------
 //  L'ultimo giorno di ogni mese, verso le 23, crea un file .zip con
-//  tutti i dati (foglio Excel completo + CSV di Foglio1 ed Eliminati),
+//  tutti i dati (foglio Excel completo + CSV di Interventi ed Eliminati),
 //  lo salva nella cartella Drive "Registro Guasti - Backup" e lo manda
 //  per email al proprietario del foglio. Le foto non sono incluse:
 //  restano nella cartella "Registro Guasti - Foto".
@@ -401,7 +418,7 @@ function backupMensile(dataRiferimento) {
   }
   var file = [xlsx.getBlob().setName(nomeBase + ".xlsx")];
 
-  // Un CSV per ogni foglio (Foglio1 ed Eliminati)
+  // Un CSV per ogni foglio (Interventi ed Eliminati)
   [sheet, ss.getSheetByName("Eliminati")].forEach(function (f) {
     if (!f) return;
     file.push(Utilities.newBlob(foglioInCsv(f), "text/csv", nomeBase + "_" + f.getName() + ".csv"));
@@ -417,7 +434,7 @@ function backupMensile(dataRiferimento) {
     "Interventi nel foglio: " + interventi + "\n" +
     "Il file è allegato a questa email ed è salvato anche su Google Drive, nella cartella \"" + NOME_CARTELLA_BACKUP + "\":\n" +
     salvato.getUrl() + "\n\n" +
-    "Contenuto: foglio completo in Excel (.xlsx) e CSV di Foglio1 ed Eliminati. Le foto restano nella cartella \"" + NOME_CARTELLA_FOTO + "\".";
+    "Contenuto: foglio completo in Excel (.xlsx) e CSV di " + sheet.getName() + " ed Eliminati. Le foto restano nella cartella \"" + NOME_CARTELLA_FOTO + "\".";
   MailApp.sendEmail({
     to: destinatario,
     subject: "Backup Registro Guasti " + Utilities.formatDate(adesso, tz, "MM/yyyy"),
