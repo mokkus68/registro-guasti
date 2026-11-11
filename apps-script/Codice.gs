@@ -332,3 +332,110 @@ function migraFotoEsistenti() {
   }
   Logger.log("Migrazione completata. Foto spostate su Drive: " + spostate);
 }
+
+// =====================================================================
+//  BACKUP MENSILE
+// ---------------------------------------------------------------------
+//  L'ultimo giorno di ogni mese, verso le 23, crea un file .zip con
+//  tutti i dati (foglio Excel completo + CSV di Foglio1 ed Eliminati),
+//  lo salva nella cartella Drive "Registro Guasti - Backup" e lo manda
+//  per email al proprietario del foglio. Le foto non sono incluse:
+//  restano nella cartella "Registro Guasti - Foto".
+//
+//  Per attivarlo: seleziona "attivaBackupMensile" e premi Esegui (una volta).
+//  Per provarlo subito: seleziona "backupMensile" e premi Esegui.
+//  Per disattivarlo: seleziona "disattivaBackupMensile" e premi Esegui.
+// =====================================================================
+
+var NOME_CARTELLA_BACKUP = "Registro Guasti - Backup";
+
+function getCartellaBackup() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty("CARTELLA_BACKUP_ID");
+  if (id) {
+    try {
+      var cartella = DriveApp.getFolderById(id);
+      if (!cartella.isTrashed()) return cartella;
+    } catch (err) { /* cartella cancellata: ne crea una nuova */ }
+  }
+  var nuova = DriveApp.createFolder(NOME_CARTELLA_BACKUP);
+  props.setProperty("CARTELLA_BACKUP_ID", nuova.getId());
+  return nuova;
+}
+
+// CSV con punto e virgola (si apre bene con Excel in italiano)
+function foglioInCsv(foglio) {
+  if (!foglio || foglio.getLastRow() === 0) return "";
+  var valori = foglio.getDataRange().getDisplayValues();
+  return "﻿" + valori.map(function (riga) {
+    return riga.map(function (v) {
+      var t = String(v);
+      return /[";\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    }).join(";");
+  }).join("\r\n");
+}
+
+// Esegue il backup solo se oggi è l'ultimo giorno del mese (la chiama il trigger ogni sera)
+function controlloBackupMensile() {
+  var tz = Session.getScriptTimeZone();
+  var oggi = new Date(Date.now());
+  var domani = new Date(oggi.getTime() + 24 * 60 * 60 * 1000);
+  if (Utilities.formatDate(domani, tz, "d") === "1") backupMensile(oggi);
+}
+
+// dataRiferimento: il giorno del controllo (così il nome del mese è giusto anche se finisce dopo mezzanotte)
+function backupMensile(dataRiferimento) {
+  var tz = Session.getScriptTimeZone();
+  var adesso = (dataRiferimento instanceof Date) ? dataRiferimento : new Date(Date.now());
+  var mese = Utilities.formatDate(adesso, tz, "yyyy-MM");
+  var nomeBase = "Registro-Guasti_" + mese;
+
+  // Foglio completo in formato Excel
+  var url = "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/export?format=xlsx";
+  var xlsx = UrlFetchApp.fetch(url, {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  if (xlsx.getResponseCode() !== 200) {
+    throw new Error("Esportazione Excel non riuscita (codice " + xlsx.getResponseCode() + ")");
+  }
+  var file = [xlsx.getBlob().setName(nomeBase + ".xlsx")];
+
+  // Un CSV per ogni foglio (Foglio1 ed Eliminati)
+  [sheet, ss.getSheetByName("Eliminati")].forEach(function (f) {
+    if (!f) return;
+    file.push(Utilities.newBlob(foglioInCsv(f), "text/csv", nomeBase + "_" + f.getName() + ".csv"));
+  });
+
+  var zip = Utilities.zip(file, nomeBase + ".zip");
+  var salvato = getCartellaBackup().createFile(zip);
+
+  var interventi = Math.max(sheet.getLastRow() - 1, 0);
+  var destinatario = Session.getEffectiveUser().getEmail();
+  var corpo =
+    "Backup del Registro Guasti di " + Utilities.formatDate(adesso, tz, "MM/yyyy") + " completato.\n\n" +
+    "Interventi nel foglio: " + interventi + "\n" +
+    "Il file è allegato a questa email ed è salvato anche su Google Drive, nella cartella \"" + NOME_CARTELLA_BACKUP + "\":\n" +
+    salvato.getUrl() + "\n\n" +
+    "Contenuto: foglio completo in Excel (.xlsx) e CSV di Foglio1 ed Eliminati. Le foto restano nella cartella \"" + NOME_CARTELLA_FOTO + "\".";
+  MailApp.sendEmail({
+    to: destinatario,
+    subject: "Backup Registro Guasti " + Utilities.formatDate(adesso, tz, "MM/yyyy"),
+    body: corpo,
+    attachments: [zip]
+  });
+
+  Logger.log("Backup creato: " + salvato.getName() + " (" + interventi + " interventi), inviato a " + destinatario);
+}
+
+function attivaBackupMensile() {
+  disattivaBackupMensile();
+  ScriptApp.newTrigger("controlloBackupMensile").timeBased().everyDays(1).atHour(23).create();
+  Logger.log("Backup mensile attivato: l'ultimo giorno di ogni mese, tra le 23 e mezzanotte.");
+}
+
+function disattivaBackupMensile() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === "controlloBackupMensile") ScriptApp.deleteTrigger(t);
+  });
+}
