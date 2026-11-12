@@ -41,6 +41,9 @@ Applicazione web mobile-friendly per la registrazione, il monitoraggio e la gest
 
 > **Aggiornare lo script senza cambiare URL:** dopo aver incollato il nuovo codice vai su **Distribuisci > Gestisci distribuzioni**, clicca la matita ✏️, in **Versione** scegli **Nuova versione** e poi **Distribuisci**.
 
+### Allegati PDF e Word
+Oltre alle foto si possono allegare file **PDF** e **Word** (.doc, .docx), fino a 10 MB ciascuno. Vengono salvati nella cartella Drive **"Registro Guasti - Allegati"**, creata in automatico. Nella colonna **M** del foglio restano il nome e il link di ogni file, e nella scheda dell'intervento compaiono come link da aprire. Gli allegati tolti durante una modifica finiscono nel cestino di Drive.
+
 ### Foto su Google Drive
 Le foto nuove vengono salvate nella cartella **"Registro Guasti - Foto"** su Google Drive (creata automaticamente) e nel foglio resta solo il link. I file sono visibili solo a chi ha il link, che l'app ottiene solo dopo il PIN. Le foto rimosse durante una modifica finiscono nel cestino di Drive.
 Le foto vecchie salvate dentro le celle restano visibili. Per spostarle su Drive (facoltativo) esegui una volta la funzione `migraFotoEsistenti` dall'editor di Apps Script.
