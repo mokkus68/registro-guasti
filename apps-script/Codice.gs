@@ -9,7 +9,9 @@
 //  - Le foto vecchie, salvate come testo nella cella, restano leggibili.
 //  - Colonne: A Data, B WR, C Centrale, D RL/Arlo, E Box/PTE, F Tipo,
 //    G Note Guasto, H Note Riparazione, I Foto, J Note Reali,
-//    K Codice Chiusura, L Quantità (K e L si intitolano da sole al primo salvataggio).
+//    K Codice Chiusura, L Quantità, M Allegati (K, L e M si intitolano da sole al primo salvataggio).
+//  - Gli allegati (PDF e Word) vanno nella cartella Drive "Registro Guasti - Allegati";
+//    nella colonna M restano nome e link di ogni file.
 // =====================================================================
 
 var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -29,8 +31,14 @@ function trovaFoglio(nomi) {
   return null;
 }
 
-var NUM_COLONNE = 12;
-var INTESTAZIONI_NUOVE = { 11: "Codice Chiusura", 12: "Quantità" };
+var NUM_COLONNE = 13;
+var INTESTAZIONI_NUOVE = { 11: "Codice Chiusura", 12: "Quantità", 13: "Allegati" };
+var NOME_CARTELLA_ALLEGATI = "Registro Guasti - Allegati";
+var TIPI_ALLEGATO = {
+  "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx"
+};
 
 var NOME_CARTELLA_FOTO = "Registro Guasti - Foto";
 var MAX_TENTATIVI_PIN = 10;      // tentativi errati prima del blocco
@@ -139,6 +147,78 @@ function leggiFotoCella(valore) {
   return testo ? testo.split(" || ") : [];
 }
 
+// ---------------------------------------------------------------------
+//  Allegati (PDF / Word) su Google Drive
+//  Nella cella: "nome :: link || nome :: link"
+// ---------------------------------------------------------------------
+function getCartellaAllegati() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty("CARTELLA_ALLEGATI_ID");
+  if (id) {
+    try {
+      var cartella = DriveApp.getFolderById(id);
+      if (!cartella.isTrashed()) return cartella;
+    } catch (err) { /* cartella cancellata: ne crea una nuova */ }
+  }
+  var nuova = DriveApp.createFolder(NOME_CARTELLA_ALLEGATI);
+  props.setProperty("CARTELLA_ALLEGATI_ID", nuova.getId());
+  return nuova;
+}
+
+function pulisciNome(nome) {
+  return String(nome || "allegato").replace(/\s*(\|\||::)\s*/g, " ").replace(/[\r\n]/g, " ").trim() || "allegato";
+}
+
+function leggiAllegatiCella(valore) {
+  var testo = valore ? valore.toString().trim() : "";
+  if (!testo) return [];
+  return testo.split(" || ").map(function (voce) {
+    var i = voce.lastIndexOf(" :: ");
+    return i >= 0 ? { nome: voce.slice(0, i), link: voce.slice(i + 4) } : { nome: voce, link: voce };
+  });
+}
+
+function scriviAllegatiCella(lista) {
+  return lista.map(function (a) { return pulisciNome(a.nome) + " :: " + a.link; }).join(" || ");
+}
+
+function idDaLinkFile(link) {
+  var m = String(link).match(/\/d\/([A-Za-z0-9_-]+)/) || String(link).match(/[?&]id=([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+// Salva su Drive gli allegati nuovi ({nome, dati}), lascia invariati quelli già caricati ({nome, link})
+function salvaAllegatiSuDrive(lista, wr) {
+  if (!lista || !Array.isArray(lista)) return [];
+  var risultato = [];
+  var cartella = null;
+  lista.forEach(function (a) {
+    if (!a) return;
+    if (a.link && !a.dati) { risultato.push({ nome: pulisciNome(a.nome), link: a.link }); return; }
+    var m = String(a.dati || "").match(/^data:([^;]+);base64,(.+)$/);
+    if (!m || !TIPI_ALLEGATO[m[1]]) throw new Error('Allegato "' + pulisciNome(a.nome) + '" non valido: sono ammessi solo PDF e Word.');
+    if (!cartella) cartella = getCartellaAllegati();
+    var nome = pulisciNome(a.nome);
+    var nomeFile = "WR" + (wr || "") + "_" + nome;
+    var file = cartella.createFile(Utilities.newBlob(Utilities.base64Decode(m[2]), m[1], nomeFile));
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    risultato.push({ nome: nome, link: "https://drive.google.com/file/d/" + file.getId() + "/view" });
+  });
+  return risultato;
+}
+
+// Sposta nel cestino di Drive gli allegati tolti durante una modifica
+function cestinaAllegatiRimossi(vecchi, nuovi) {
+  var tenuti = {};
+  nuovi.forEach(function (a) { var id = idDaLinkFile(a.link); if (id) tenuti[id] = true; });
+  vecchi.forEach(function (a) {
+    var id = idDaLinkFile(a.link);
+    if (id && !tenuti[id]) {
+      try { DriveApp.getFileById(id).setTrashed(true); } catch (err) { /* già rimosso */ }
+    }
+  });
+}
+
 // Scrive i titoli delle colonne nuove (K, L) se mancano
 function controllaIntestazioni() {
   Object.keys(INTESTAZIONI_NUOVE).forEach(function (col) {
@@ -186,7 +266,8 @@ function elencoGuasti() {
       foto: leggiFotoCella(row[8]),
       noteReali: row[9] || "",
       codiceChiusura: row[10] || "",
-      quantita: row[11] || ""
+      quantita: row[11] || "",
+      allegati: leggiAllegatiCella(row[12])
     });
   }
   return result;
@@ -218,6 +299,8 @@ function doPost(e) {
     }
 
     var vecchiLinkInviati = (data.foto || []).filter(function (f) { return !/^data:image\//.test(String(f)); });
+    var allegatiGiaCaricati = (data.allegati || []).filter(function (a) { return a && a.link && !a.dati; });
+    var allegatiFinali = salvaAllegatiSuDrive(data.allegati, data.wr);
     var fotoLinks = salvaFotoSuDrive(data.foto, data.wr);
     var fotoString = fotoLinks.join(" || ");
 
@@ -233,7 +316,8 @@ function doPost(e) {
       fotoString,                // Colonna I: Foto (link Drive)
       data.noteReali || "",      // Colonna J: Note Reali
       data.codiceChiusura || "", // Colonna K: Codice Chiusura
-      data.quantita || ""        // Colonna L: Quantità
+      data.quantita || "",       // Colonna L: Quantità
+      scriviAllegatiCella(allegatiFinali) // Colonna M: Allegati
     ];
     controllaIntestazioni();
 
@@ -244,13 +328,16 @@ function doPost(e) {
         // Prima di modificare, controlla che la riga sia ancora quella giusta
         var controllo = controllaRiga(data);
         if (!controllo.ok) {
-          // Annulla: rimette nel cestino le foto appena caricate per questo tentativo
+          // Annulla: rimette nel cestino foto e allegati appena caricati per questo tentativo
           cestinaFotoRimosse(fotoLinks, vecchiLinkInviati);
+          cestinaAllegatiRimossi(allegatiFinali, allegatiGiaCaricati);
           return sendJSON({ result: "error", code: "row", message: controllo.message });
         }
         var vecchieFoto = leggiFotoCella(sheet.getRange(controllo.rowIndex, 9).getValue());
+        var vecchiAllegati = leggiAllegatiCella(sheet.getRange(controllo.rowIndex, 13).getValue());
         sheet.getRange(controllo.rowIndex, 1, 1, NUM_COLONNE).setValues([valori]);
         cestinaFotoRimosse(vecchieFoto, fotoLinks);
+        cestinaAllegatiRimossi(vecchiAllegati, allegatiFinali);
         return sendJSON({ result: "success", message: "updated" });
       } finally {
         lock.releaseLock();
@@ -296,18 +383,22 @@ function eliminaIntervento(data) {
       return sendJSON({ result: "error", code: "row", message: controllo.message });
     }
 
-    // Foglio "Eliminati": colonne A-J come Interventi, K data di eliminazione, L Codice Chiusura, M Quantità
+    // Foglio "Eliminati": colonne A-J come Interventi, K data di eliminazione, L Codice Chiusura, M Quantità, N Allegati
     var cestino = ss.getSheetByName("Eliminati");
     if (!cestino) {
       cestino = ss.insertSheet("Eliminati");
       var intestazioni = sheet.getRange(1, 1, 1, 10).getValues()[0];
-      cestino.appendRow(intestazioni.concat(["Eliminato il", "Codice Chiusura", "Quantità"]));
-    } else if (String(cestino.getRange(1, 12).getValue()).trim() === "") {
-      cestino.getRange(1, 12, 1, 2).setValues([["Codice Chiusura", "Quantità"]]);
+      cestino.appendRow(intestazioni.concat(["Eliminato il", "Codice Chiusura", "Quantità", "Allegati"]));
+    } else {
+      var titoli = { 12: "Codice Chiusura", 13: "Quantità", 14: "Allegati" };
+      Object.keys(titoli).forEach(function (c) {
+        var cella = cestino.getRange(1, parseInt(c, 10));
+        if (String(cella.getValue()).trim() === "") cella.setValue(titoli[c]);
+      });
     }
 
     var valori = sheet.getRange(controllo.rowIndex, 1, 1, NUM_COLONNE).getValues()[0];
-    cestino.appendRow(valori.slice(0, 10).concat([new Date()], valori.slice(10, 12)));
+    cestino.appendRow(valori.slice(0, 10).concat([new Date()], valori.slice(10, 13)));
     sheet.deleteRow(controllo.rowIndex);
 
     return sendJSON({ result: "success", message: "deleted" });

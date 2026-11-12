@@ -140,6 +140,15 @@
           <div id="anteprimeFoto" class="flex flex-wrap gap-2 mt-3"></div>
         </div>
 
+        <div>
+          <label class="block text-sm font-medium text-gray-700">📎 Allegati PDF o Word (Opzionale)</label>
+          <input type="file" id="allegatiInput" multiple
+            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onchange="gestisciAllegati(event)" class="mt-1 w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-violet-50 file:text-violet-700">
+          <p class="text-xs text-gray-400 mt-1">Massimo 10 MB per file.</p>
+          <ul id="elencoAllegati" class="mt-2 space-y-1"></ul>
+        </div>
+
         <button type="submit" id="btnSalva" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-md transition duration-200">
           Salva Intervento su Google Sheets
         </button>
@@ -219,7 +228,7 @@
 
   <script>
     // Versione dell'app (maggiore.minore.correzione): va aumentata a ogni modifica
-    const VERSIONE_APP = '1.1.4';
+    const VERSIONE_APP = '1.2.0';
     document.getElementById('versione-app').innerText = 'v' + VERSIONE_APP;
 
     // Voci del menu "Codice Chiusura" (una per riga, come devono comparire nel menu)
@@ -586,6 +595,68 @@
       });
     }
 
+    // --- ALLEGATI (PDF / Word) ---
+    // Ogni allegato è { nome, dati } se nuovo (dati = data:...;base64) oppure { nome, link } se già su Drive
+    let allegati = [];
+    const MAX_ALLEGATO_MB = 10;
+    const TIPI_ALLEGATO = {
+      pdf: 'application/pdf',
+      doc: 'application/msword',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    };
+
+    function iconaAllegato(nome) {
+      return /\.pdf$/i.test(nome || '') ? '📕' : '📘';
+    }
+
+    function gestisciAllegati(e) {
+      const files = Array.from(e.target.files);
+      files.forEach(file => {
+        const est = (file.name.split('.').pop() || '').toLowerCase();
+        if (!TIPI_ALLEGATO[est]) {
+          alert(`"${file.name}" non è un PDF o un documento Word: non è stato aggiunto.`);
+          return;
+        }
+        if (file.size > MAX_ALLEGATO_MB * 1024 * 1024) {
+          alert(`"${file.name}" è troppo grande (${(file.size / 1048576).toFixed(1)} MB). Il massimo è ${MAX_ALLEGATO_MB} MB.`);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          // Alcuni telefoni non indicano il tipo del file: lo ricava dall'estensione
+          const base64 = String(ev.target.result).split(',')[1] || '';
+          allegati.push({ nome: file.name, dati: `data:${TIPI_ALLEGATO[est]};base64,${base64}` });
+          aggiornaElencoAllegati();
+        };
+        reader.readAsDataURL(file);
+      });
+      e.target.value = '';
+    }
+
+    function rimuoviAllegato(index) {
+      allegati.splice(index, 1);
+      aggiornaElencoAllegati();
+    }
+
+    function aggiornaElencoAllegati() {
+      const ul = document.getElementById('elencoAllegati');
+      ul.innerHTML = '';
+      allegati.forEach((a, index) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center gap-2 text-sm bg-gray-50 border rounded px-2 py-1.5';
+        const nome = document.createElement('span');
+        nome.className = 'flex-1 truncate';
+        nome.textContent = `${iconaAllegato(a.nome)} ${a.nome}` + (a.dati ? ' (da caricare)' : '');
+        li.appendChild(nome);
+        li.insertAdjacentHTML('beforeend', `<button type="button" onclick="rimuoviAllegato(${index})" class="bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-red-700 shrink-0">×</button>`);
+        ul.appendChild(li);
+      });
+    }
+
+    function escapeHtml(t) {
+      return String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
     function impostaOggi() {
       document.getElementById('filtroData').value = oggiStringa;
       cambiaData();
@@ -618,7 +689,7 @@
       btn.disabled = true;
 
       btn.innerText = isEditing ? "Aggiornamento in corso..." : "Invio in corso al Foglio Google...";
-      if (fotoBase64.some(f => f.startsWith('data:'))) btn.innerText += " (caricamento foto)";
+      if (fotoBase64.some(f => f.startsWith('data:')) || allegati.some(a => a.dati)) btn.innerText += " (caricamento file)";
 
       const payload = {
         action: isEditing ? "update" : "insert",
@@ -635,7 +706,8 @@
         noteReali: document.getElementById('noteReali').value,
         codiceChiusura: document.getElementById('codiceChiusura').value,
         quantita: parseInt(document.getElementById('quantita').value, 10) || 1,
-        foto: fotoBase64
+        foto: fotoBase64,
+        allegati: allegati.map(a => a.dati ? { nome: a.nome, dati: a.dati } : { nome: a.nome, link: a.link })
       };
 
       // Senza rete: il nuovo intervento resta sul telefono e parte appena torna la connessione
@@ -687,6 +759,8 @@
 
       fotoBase64 = guasto.foto ? [...guasto.foto] : [];
       aggiornaAnteprimeFoto();
+      allegati = Array.isArray(guasto.allegati) ? guasto.allegati.map(a => ({ ...a })) : [];
+      aggiornaElencoAllegati();
 
       document.getElementById('form-title').innerText = "Modifica Intervento (WR #" + guasto.wr + ")";
       document.getElementById('btnSalva').innerText = "Aggiorna Intervento";
@@ -731,6 +805,8 @@
       document.getElementById('data').value = oggiStringa;
       document.getElementById('anteprimeFoto').innerHTML = '';
       fotoBase64 = [];
+      allegati = [];
+      aggiornaElencoAllegati();
       document.getElementById('form-title').innerText = "Nuovo Intervento";
       document.getElementById('btnSalva').innerText = "Salva Intervento su Google Sheets";
       document.getElementById('btn-annulla-modifica').classList.add('hidden');
@@ -1108,6 +1184,14 @@
           ${g.foto && g.foto.length > 0 ? `
             <div class="flex gap-2 mt-2 flex-wrap">
               ${g.foto.map(img => `<img src="${miniatura(img)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null; this.removeAttribute('src'); this.alt='📷'; this.title='Foto non disponibile offline'; this.classList.add('bg-gray-200')" class="w-14 h-14 object-cover rounded border cursor-pointer hover:opacity-80 shadow-sm text-center text-xl" onclick="window.open('${img}')">`).join('')}
+            </div>
+          ` : ''}
+
+          ${Array.isArray(g.allegati) && g.allegati.length > 0 ? `
+            <div class="flex flex-col gap-1 mt-1">
+              ${g.allegati.map(a => a.link
+                ? `<a href="${escapeHtml(a.link)}" target="_blank" rel="noopener" class="text-sm text-violet-700 underline truncate">${iconaAllegato(a.nome)} ${escapeHtml(a.nome)}</a>`
+                : `<span class="text-sm text-gray-500 truncate">${iconaAllegato(a.nome)} ${escapeHtml(a.nome)} (in attesa di invio)</span>`).join('')}
             </div>
           ` : ''}
         `;
