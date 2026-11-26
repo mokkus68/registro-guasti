@@ -164,6 +164,17 @@
       </div>
     </div>
 
+    <!-- Ricerca per WR -->
+    <div class="bg-white p-4 rounded-lg shadow-md space-y-2">
+      <label for="filtroWr" class="block text-lg font-semibold text-gray-700">🔢 Ricerca per WR</label>
+      <div class="flex gap-2">
+        <input type="text" id="filtroWr" inputmode="numeric" autocomplete="off" oninput="cambiaWr()"
+          placeholder="Scrivi il numero WR, anche solo una parte..." class="flex-1 min-w-0 p-2 border rounded-md">
+        <button type="button" id="btn-azzera-wr" onclick="azzeraWr()" class="hidden text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded font-medium">✕ Azzera</button>
+      </div>
+      <p class="text-xs text-gray-400">Cerca su tutti gli interventi, di qualsiasi data e centrale.</p>
+    </div>
+
     <!-- Ricerca per Centrale -->
     <div class="bg-white p-4 rounded-lg shadow-md space-y-3">
       <div class="flex justify-between items-center">
@@ -228,7 +239,7 @@
 
   <script>
     // Versione dell'app (maggiore.minore.correzione): va aumentata a ogni modifica
-    const VERSIONE_APP = '1.2.0';
+    const VERSIONE_APP = '1.2.1';
     document.getElementById('versione-app').innerText = 'v' + VERSIONE_APP;
 
     // Voci del menu "Codice Chiusura" (una per riga, come devono comparire nel menu)
@@ -664,6 +675,11 @@
 
     // Scegliere una data chiude la ricerca per centrale e torna alla vista del giorno
     function cambiaData() {
+      // Scegliere una data chiude anche la ricerca per WR
+      if (document.getElementById('filtroWr').value) {
+        document.getElementById('filtroWr').value = '';
+        document.getElementById('btn-azzera-wr').classList.add('hidden');
+      }
       if (document.getElementById('filtroCentrale').value) {
         azzeraRicerca();
       } else {
@@ -993,7 +1009,32 @@
       aggiornaStatoRicerca();
     }
 
+    // --- RICERCA PER WR ---
+    function cambiaWr() {
+      const q = document.getElementById('filtroWr').value.trim();
+      document.getElementById('btn-azzera-wr').classList.toggle('hidden', !q);
+      // La ricerca per WR sostituisce quella per centrale
+      if (q && document.getElementById('filtroCentrale').value) {
+        document.getElementById('filtroCentrale').value = '';
+        tipoSelezionato = 'Tutti';
+        document.getElementById('filtroRlArlo').value = '';
+        document.getElementById('filtroBoxPte').value = '';
+        aggiornaStatoRicerca();
+      }
+      filtraGuasti();
+    }
+
+    function azzeraWr() {
+      document.getElementById('filtroWr').value = '';
+      cambiaWr();
+    }
+
     function cambiaCentrale() {
+      // Scegliere una centrale chiude la ricerca per WR
+      if (document.getElementById('filtroCentrale').value && document.getElementById('filtroWr').value) {
+        document.getElementById('filtroWr').value = '';
+        document.getElementById('btn-azzera-wr').classList.add('hidden');
+      }
       // Nuova centrale: riparte da tipo "Tutti" e menu azzerati
       tipoSelezionato = 'Tutti';
       document.getElementById('filtroRlArlo').value = '';
@@ -1097,8 +1138,15 @@
       const titoloLista = document.getElementById('lista-titolo');
 
       let filtrati;
+      const qWr = document.getElementById('filtroWr').value.replace(/\s+/g, '').toLowerCase();
 
-      if (centrale) {
+      if (qWr) {
+        // Ricerca per WR su tutto lo storico: prima chi corrisponde esattamente, poi gli altri (più recenti in alto)
+        const tutti = elencoCompleto().filter(g => String(g.wr).replace(/\s+/g, '').toLowerCase().includes(qWr));
+        const esatti = tutti.filter(g => String(g.wr).replace(/\s+/g, '').toLowerCase() === qWr);
+        filtrati = [...esatti, ...tutti.filter(g => !esatti.includes(g))];
+        titoloLista.innerText = `🔢 WR "${document.getElementById('filtroWr').value.trim()}" — ${filtrati.length} ${filtrati.length === 1 ? 'intervento' : 'interventi'}`;
+      } else if (centrale) {
         // Ricerca per centrale su tutto lo storico
         const qRl = document.getElementById('filtroRlArlo').value;
         const qBox = document.getElementById('filtroBoxPte').value;
